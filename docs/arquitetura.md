@@ -1,165 +1,108 @@
-# Arquitetura — Condly
-
-> Este documento é a fonte da verdade sobre a arquitetura do backend.
-> `CLAUDE.md`, na raiz do repositório, é só um resumo de navegação que
-> aponta para aqui. Se os dois divergirem, atualize este arquivo e depois
-> sincronize o resumo — nunca o contrário.
+# Arquitetura do sistema — Condly
 
 ## 1. Visão geral
 
-Condly é um SaaS multi-tenant de gestão condominial. Uma Administradora
-contrata o Condly e gerencia, através dele, múltiplos Condomínios; cada
-Condomínio tem Unidades, e cada Unidade pode ter um ou mais moradores
-(Condôminos) e/ou um Síndico responsável. O sistema é dividido em dois
-apps (`apps/web` e `apps/api`, ver `docs/stack.md`) e hoje cobre quatro
-áreas de domínio implementadas: autenticação/RBAC, cadastro
-(administradoras/condomínios/unidades), financeiro (cobranças via Asaas)
-e chamados (manutenção/suporte). Reservas, documentos, avisos e o bot de
-WhatsApp estão no schema mas ainda não têm módulo de API.
+Condly é uma plataforma multi-tenant de gestão condominial, vendida para **administradoras de condomínio**, que ativam módulos por condomínio dentro da sua carteira. Três perfis de usuário acessam o mesmo sistema com permissões diferentes:
 
-## 2. Modelo de dados multi-tenant
+- **Administradora**: vê todos os condomínios da sua carteira, configura módulos, acompanha o desempenho consolidado.
+- **Síndico**: vê apenas o(s) condomínio(s) que administra, gerencia chamados, documentos, financeiro e comunicação.
+- **Condômino**: vê apenas a sua unidade, acessa o app/PWA ou interage via bot de WhatsApp.
 
-A hierarquia de tenant é estritamente em árvore, refletida 1:1 no Prisma
-schema (`apps/api/prisma/schema.prisma`):
+O sistema é dividido em quatro camadas: **aplicação (app web/PWA)**, **API central**, **banco de dados** e **integrações externas** (bot de WhatsApp e gateway de pagamentos).
 
-```
-Administradora
-  └── Condominio (administradoraId)
-        └── Unidade (condominioId)
-```
+## 2. Modelo multi-tenant e marca
 
-Todo modelo de domínio se ancora nessa árvore por uma foreign key direta
-(nunca "solta"):
+**Decisão de produto**: Condly opera com marca própria, não como white label completo. O nome e a identidade visual do Condly ficam visíveis para administradoras e condôminos. O que existe é **co-branding leve**: o nome e o logo da administradora aparecem em pontos pontuais de contato — mensagem de boas-vindas do bot, remetente de e-mail, um banner de "oferecido por [Administradora]" dentro do app — sem que isso exija um motor de temas dinâmico, domínio customizado por cliente, ou qualquer reformulação visual do produto por tenant.
 
-| Modelo        | Ancorado em                          |
-|---------------|---------------------------------------|
-| Condominio    | `administradoraId`                    |
-| Unidade       | `condominioId`                         |
-| Chamado       | `condominioId` (+ `unidadeId` opcional)|
-| Documento     | `condominioId`                         |
-| Aviso         | `condominioId` (+ `unidadeId` opcional)|
-| AreaComum     | `condominioId`                         |
-| Cobranca      | `unidadeId`                            |
-| Reserva       | `unidadeId` (via `areaComumId`)        |
-| ConversaBot   | `unidadeId`                            |
-| VinculoUsuario| `administradoraId` OU `condominioId` OU `unidadeId` (exatamente um nível, conforme o papel) |
+Essa decisão segue um padrão já validado no mercado: o Gruvi, app de moradores da Superlógica (a maior administradora de plataformas do setor), funciona com marca própria única, usada por moradores de mais de 100.000 condomínios geridos por administradoras diferentes — nenhuma delas precisa "vestir" o app com sua própria marca para que ele seja adotado.
 
-`Usuario` é a única entidade que não pertence a um tenant — ela existe
-fora da árvore e se conecta a ela só através de `VinculoUsuario`. Por
-isso, lookups de `Usuario` (ex: validar um `responsavelId` de Chamado) não
-passam pelo filtro de tenant — não há isolamento a aplicar num modelo que
-não tem `administradoraId`/`condominioId`/`unidadeId`.
+**Isolamento de dados (isso não muda)**: independente da decisão de marca, o isolamento multi-tenant continua sendo uma exigência de segurança e privacidade, não uma questão estética. Recomendação para o MVP: **banco de dados único, com isolamento lógico por `administradoraId`**. Cada tabela relevante carrega essa coluna, e toda consulta no backend filtra por esse campo automaticamente (via middleware ou Row-Level Security do PostgreSQL).
 
-### Papéis (`PapelVinculo`)
+Vantagens dessa simplificação para o estágio atual:
+- O escopo de engenharia cai bastante: não é preciso construir upload de logo, customização de paleta de cores ou domínio próprio por cliente.
+- A marca Condly acumula reputação, avaliações e casos de uso em um único lugar, em vez de ficar fragmentada em "instâncias" por administradora.
+- Se a parceria com o primeiro cliente não avançar, o produto já está pronto, com identidade própria, para ser oferecido a qualquer outra administradora — sem retrabalho de configuração visual.
 
-- **ADMINISTRADORA**: vínculo com `administradoraId`. Gerencia toda a
-  árvore daquela administradora.
-- **SINDICO**: vínculo com `condominioId`. Gerencia um condomínio
-  inteiro, incluindo todas as unidades dele.
-- **CONDOMINO**: vínculo com `unidadeId`. Mora em uma unidade específica.
+## 3. Entidades principais (modelo de dados simplificado)
 
-## 3. Autenticação
+- **Administradora**: dados cadastrais, plano contratado.
+- **Condomínio**: pertence a uma administradora; dados cadastrais, endereço, áreas comuns cadastradas, e referência ao identificador da sua subconta no gateway de pagamento (ver seção 5.1).
+- **Unidade**: pertence a um condomínio (apartamento, casa, sala comercial).
+- **Usuário**: pessoa física, com um ou mais vínculos de papel (administradora / síndico / condômino) e vínculo a uma ou mais unidades.
+- **Cobrança**: vinculada a uma unidade, com valor, vencimento, status (pendente, pago, atrasado, em acordo) e referência externa do gateway de pagamento.
+- **Chamado**: aberto por síndico ou condômino, com categoria, status, histórico de mensagens e responsável.
+- **Documento**: arquivo vinculado a um condomínio (ata, convocação, prestação de contas, foto de serviço), com controle de quem pode visualizar.
+- **Aviso**: mensagem broadcast para um condomínio ou unidade específica, com canais de envio (app, e-mail, WhatsApp).
+- **Reserva**: vinculada a uma área comum e a uma unidade, com data/hora de início e fim.
+- **ÁreaComum**: cadastro de espaços reserváveis (salão, churrasqueira, etc.) com regras (intervalo mínimo, antecedência máxima).
+- **ConversaBot**: histórico de interações do condômino com o bot, para auditoria e para dar contexto à equipe humana quando uma conversa é escalada.
 
-`POST /auth/login` valida e-mail/senha (bcrypt) e emite um JWT
-(`AuthService`, `apps/api/src/auth/auth.service.ts`) cujo payload carrega
-a lista de vínculos do usuário. Cada vínculo no token é **resolvido por
-completo** no momento do login: um vínculo de CONDOMINO, que no banco só
-tem `unidadeId`, ganha também o `condominioId` da sua própria unidade
-(buscado uma única vez, no login, não a cada requisição). Esse
-pré-cálculo existe especificamente para o RBAC da seção 4 funcionar —
-sem ele, um condômino nunca conseguiria ser autorizado em nenhuma rota de
-nível condomínio (ex: abrir um chamado).
+## 4. Papéis e permissões (RBAC)
 
-`JwtStrategy` (`apps/api/src/auth/strategies/jwt.strategy.ts`) valida o
-token em toda rota protegida por `JwtAuthGuard` e popula
-`request.user: AuthenticatedUser`.
+| Papel | Visibilidade | Pode fazer |
+|---|---|---|
+| Administradora | Todos os condomínios da carteira | Configurar módulos, ver financeiro consolidado, gerenciar usuários síndicos |
+| Síndico | Apenas seu(s) condomínio(s) | Gerenciar chamados, documentos, avisos, financeiro do condomínio, aprovar chamados de condômino |
+| Condômino | Apenas sua unidade | Ver financeiro próprio, abrir chamado (se habilitado), reservar área comum, receber avisos |
 
-## 4. Isolamento multi-tenant (regra inegociável)
+A permissão é resolvida em dois níveis: papel (o que a pessoa pode fazer) e tenant/condomínio (sobre o que ela pode fazer). Isso evita que um síndico de um condomínio veja dados de outro, mesmo dentro da mesma administradora.
 
-Esta é a seção citada por `CLAUDE.md` — qualquer query Prisma sobre
-Condominio, Unidade, Cobranca, Chamado, Documento, Aviso, Reserva,
-AreaComum ou ConversaBot precisa passar pelas duas camadas abaixo.
+## 5. Fluxos críticos
 
-### 4.1 Camada 1 — autorização (`RolesGuard`)
+### 5.1 Fluxo de pagamento — modelo de subconta
 
-Toda rota anotada com `@Roles(...)` passa por
-`apps/api/src/auth/rbac/roles.guard.ts`, que:
+Cada condomínio opera com sua própria **subconta** no gateway de pagamento (Asaas ou Efí), vinculada ao CNPJ do próprio condomínio. Isso significa:
 
-1. Resolve o **escopo do recurso** acessado a partir dos parâmetros da
-   rota (`TenantScopeResolverService`,
-   `apps/api/src/auth/rbac/tenant-scope-resolver.service.ts`) — por
-   exemplo, `:unidadeId` na URL é resolvido para
-   `{ administradoraId, condominioId, unidadeId }` subindo a árvore a
-   partir da Unidade. A mesma lógica existe para `:condominioId`,
-   `:administradoraId` e `:chamadoId` (este último resolve via
-   `Chamado.condominioId`, para suportar rotas como
-   `PATCH /chamados/:chamadoId` que não têm `condominioId` na URL).
-2. Checa se algum vínculo do usuário autenticado autoriza aquele escopo,
-   **por papel** (`vinculoAutoriza`, no mesmo arquivo) — não é "qualquer
-   campo do vínculo que bater":
-   - ADMINISTRADORA autoriza por `administradoraId`.
-   - SINDICO autoriza por `condominioId` (cobre as unidades do
-     condomínio também).
-   - CONDOMINO autoriza por `unidadeId` quando o recurso é de uma
-     unidade específica, ou por `condominioId` (resolvido no login, ver
-     seção 3) quando o recurso é de nível condomínio sem unidade alvo —
-     mas nunca ganha acesso a uma unidade que não é a sua.
+- O dinheiro do pagamento cai direto na conta do condomínio, não numa conta intermediária do Condly.
+- A taxa cobrada pelo gateway por boleto/PIX pago é descontada do condomínio, exatamente como já acontece hoje com qualquer processo de cobrança — não é um custo do Condly.
+- Condly atua só como orquestrador: gera a cobrança via API em nome da subconta correspondente, e recebe o webhook de confirmação.
 
-Se nenhum vínculo autoriza, `403`. Se o recurso referenciado pelos
-parâmetros da rota não existe, `404` — **antes** da checagem acima, o
-que significa que um usuário autenticado consegue distinguir "não
-existe" de "existe em outro tenant" (ver débito técnico, seção 6).
+Fluxo passo a passo:
+1. O sistema gera a cobrança mensal (boleto + PIX) via API do gateway, na subconta do condomínio correspondente.
+2. O gateway retorna um identificador externo, salvo no registro de Cobrança.
+3. Quando o condômino paga, o gateway dispara um **webhook** para o backend confirmando o pagamento.
+4. O backend atualiza o status da Cobrança para "pago" automaticamente, sem intervenção manual.
+5. Síndico e administradora veem o status atualizado no dashboard financeiro em tempo real.
+6. Opcionalmente, o bot de WhatsApp envia confirmação automática ao condômino.
 
-### 4.2 Camada 2 — filtro físico (`TenantInterceptor`)
+### 5.2 Fluxo de reserva via bot
 
-Depois que o Guard aprova a requisição, `TenantInterceptor`
-(`apps/api/src/prisma/tenant.interceptor.ts`) injeta em
-`request.tenantPrisma` um Prisma Client estendido
-(`buildScopedPrismaClient`, `apps/api/src/prisma/tenant-prisma.ts`) que
-reaplica o mesmo escopo resolvido na seção 4.1 em **toda** query Prisma
-feita por aquele client — mesmo que o service esqueça de filtrar
-manualmente. Os services sempre devem receber e usar esse client (via
-`@CurrentTenantPrisma()`), nunca o `PrismaService` "cru", exceto em
-lugares que deliberadamente operam fora de um tenant resolvido (ex:
-`AuthService.login`, que ainda não sabe a qual tenant o usuário
-pertence).
+1. Condômino envia mensagem ao bot pedindo para reservar uma área comum.
+2. Bot consulta a disponibilidade no backend para a área e data informadas.
+3. Se disponível, bot cria a reserva diretamente e confirma por mensagem.
+4. Se houver conflito, bot informa os horários livres mais próximos.
+5. A reserva aparece automaticamente no calendário do app, visível para síndico e demais condôminos.
 
-Essa é a segunda linha de defesa: mesmo que um service tenha um bug e
-esqueça o `where: { condominioId }`, o client estendido já injeta esse
-filtro por fora. As duas camadas são redundantes por design.
+### 5.3 Fluxo de chamado
 
-## 5. Módulos de domínio implementados
+1. Síndico ou condômino abre um chamado (pelo app ou pelo bot).
+2. Se aberto por condômino, o chamado entra como "pendente de triagem" e o síndico recebe um aviso.
+3. Síndico classifica, atribui responsável e acompanha o status.
+4. Toda atualização de status dispara notificação ao condômino que abriu o chamado.
 
-- **auth** (`src/auth`) — login, JWT, RBAC (`rbac/`), guards.
-- **administradoras** (`src/administradoras`) — CRUD básico, nível mais
-  alto da árvore.
-- **condominios** (`src/condominios`) — CRUD, acessível por
-  ADMINISTRADORA e SINDICO do próprio condomínio.
-- **unidades** (`src/unidades`) — CRUD, acessível por ADMINISTRADORA,
-  SINDICO e pelo CONDOMINO da própria unidade.
-- **financeiro** (`src/financeiro`) — emissão de cobrança via Asaas
-  (sandbox/produção), webhook de confirmação de pagamento, resumo
-  financeiro do condomínio. Ver `docs/stack.md` seção 3.2.
-- **chamados** (`src/chamados`) — abertura (síndico ou condômino, status
-  inicial diferente conforme quem abre), triagem/atualização (síndico),
-  listagem com filtro de status (administradora/síndico), evento
-  `chamado.status_alterado` via `@nestjs/event-emitter` a cada mudança
-  real de status. Decisões de escopo detalhadas em `CLAUDE.md`.
+## 6. Integrações externas
 
-Ainda no schema, sem módulo de API: Documento, Aviso, AreaComum, Reserva,
-ConversaBot.
+- **Gateway de pagamento** (Asaas ou Efí): geração de boleto/PIX via subconta de cada condomínio, com webhook de confirmação. A taxa por transação é do condomínio, não do Condly.
+- **WhatsApp Business API**: canal do bot.
+- **E-mail transacional** (Resend): envio de avisos e notificações por e-mail como canal alternativo, com remetente exibindo o nome da administradora (co-branding leve).
+- **Armazenamento de arquivos** (Cloudflare R2): documentos, fotos de comprovação de serviço, gravações de assembleia.
 
-## 6. Débito técnico conhecido
+## 7. Segurança e LGPD
 
-Mantido em `CLAUDE.md` (seção "Débito técnico conhecido") para ficar
-junto das outras pendências do projeto — não duplicado aqui para evitar
-os dois arquivos divergirem.
+- Dados sensíveis (saúde, condição de moradores especiais) exigem base legal específica e devem ficar em campos com controle de acesso mais restrito — apenas síndico e administradora, nunca outros condôminos, e sempre com consentimento explícito do morador.
+- Histórico de pagamento e advertências deve ser visível apenas para o próprio condômino, síndico e administradora.
+- Toda comunicação com o bot é registrada (ConversaBot) para auditoria, já que decisões automáticas (como confirmar uma reserva) precisam ser rastreáveis.
+- Recomenda-se consulta a um advogado especializado em LGPD antes de lançar o módulo de perfis de condômino com dados sensíveis.
 
-## 7. Controle de versão
+## 8. Desenvolvimento assistido por IA
 
-O projeto passou a ter um repositório git a partir do commit "estado
-inicial após Prompts 0-4". Antes disso não havia histórico algum — se
-você está lendo isto numa auditoria e precisa de contexto sobre uma
-mudança anterior a esse commit, ela não existe em lugar nenhum; a
-reconstrução teria que vir da memória de quem trabalhou no projeto, não
-do git.
+O Condly será desenvolvido com apoio de um agente de codificação de IA (Claude Code ou equivalente) dentro do VS Code. Dado que o risco mais caro deste sistema é um vazamento de dados entre administradoras (violação do isolamento multi-tenant descrito na seção 2), o projeto adota verificação automática além de instruções em linguagem natural — um arquivo de memória do projeto, skills reutilizáveis para padrões recorrentes, um subagente revisor de segurança multi-tenant, e hooks que rodam lint/typecheck automaticamente após cada edição. Ver o documento `05-boas-praticas-ia.md` para a configuração completa, que deve ser feita antes do Prompt 0 do documento de prompts.
+
+## 9. Limitações conhecidas do MVP
+
+Ficam de fora da primeira versão — votação/assembleia online e gráficos de consumo. Ficam também fora, como próximos passos de roadmap (e não ausências definitivas a esconder em conversa de venda):
+
+- Gestão de inadimplência avançada (régua de cobrança automática com escalonamento)
+- Controle de visitantes/portaria
+- Gestão de funcionários (zeladoria, portaria)
+- Livro de ocorrências digital
