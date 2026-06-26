@@ -1,0 +1,226 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PapelVinculo {
+  ADMINISTRADORA
+  SINDICO
+  CONDOMINO
+}
+
+enum StatusCobranca {
+  PENDENTE
+  PAGO
+  ATRASADO
+  EM_ACORDO
+}
+
+enum StatusChamado {
+  PENDENTE_TRIAGEM
+  ABERTO
+  EM_ANDAMENTO
+  RESOLVIDO
+}
+
+enum CanalAviso {
+  APP
+  EMAIL
+  WHATSAPP
+}
+
+model Administradora {
+  id           String   @id @default(cuid())
+  nome         String
+  emailContato String
+  criadoEm     DateTime @default(now())
+
+  condominios Condominio[]
+  vinculos    VinculoUsuario[]
+}
+
+model Condominio {
+  id                String  @id @default(cuid())
+  administradoraId  String
+  nome              String
+  endereco          String
+  cnpj              String  @unique
+  subcontaGatewayId String?
+
+  administradora Administradora   @relation(fields: [administradoraId], references: [id])
+  unidades       Unidade[]
+  vinculos       VinculoUsuario[]
+  chamados       Chamado[]
+  documentos     Documento[]
+  avisos         Aviso[]
+  areasComuns    AreaComum[]
+
+  @@index([administradoraId])
+}
+
+model Unidade {
+  id            String @id @default(cuid())
+  condominioId  String
+  identificador String
+  tipo          String
+
+  // Dados do responsável financeiro da unidade — opcionais por ora (não há
+  // tela de cadastro ainda), mas o Asaas exige cpfCnpj pra emitir cobrança
+  // em produção. Sem isso, FinanceiroService só permite cobrança em sandbox.
+  responsavelNome    String?
+  responsavelEmail   String?
+  responsavelCpfCnpj String?
+
+  condominio   Condominio       @relation(fields: [condominioId], references: [id])
+  vinculos     VinculoUsuario[]
+  cobrancas    Cobranca[]
+  chamados     Chamado[]
+  avisos       Aviso[]
+  reservas     Reserva[]
+  conversasBot ConversaBot[]
+
+  @@unique([condominioId, identificador])
+  @@index([condominioId])
+}
+
+model Usuario {
+  id               String  @id @default(cuid())
+  nome             String
+  email            String  @unique
+  telefoneWhatsapp String?
+  senhaHash        String
+
+  vinculos            VinculoUsuario[]
+  chamadosAbertos     Chamado[]        @relation("ChamadoAbertoPor")
+  chamadosResponsavel Chamado[]        @relation("ChamadoResponsavel")
+}
+
+model VinculoUsuario {
+  id               String       @id @default(cuid())
+  usuarioId        String
+  papel            PapelVinculo
+  administradoraId String?
+  condominioId     String?
+  unidadeId        String?
+
+  usuario        Usuario         @relation(fields: [usuarioId], references: [id])
+  administradora Administradora? @relation(fields: [administradoraId], references: [id])
+  condominio     Condominio?     @relation(fields: [condominioId], references: [id])
+  unidade        Unidade?        @relation(fields: [unidadeId], references: [id])
+
+  @@index([usuarioId])
+  @@index([administradoraId])
+  @@index([condominioId])
+  @@index([unidadeId])
+}
+
+model Cobranca {
+  id               String         @id @default(cuid())
+  unidadeId        String
+  valor            Decimal        @db.Decimal(10, 2)
+  vencimento       DateTime       @db.Date
+  status           StatusCobranca
+  idExternoGateway String?
+  pagoEm           DateTime?
+
+  unidade Unidade @relation(fields: [unidadeId], references: [id])
+
+  @@index([unidadeId])
+}
+
+model Chamado {
+  id            String        @id @default(cuid())
+  condominioId  String
+  unidadeId     String?
+  abertoPorId   String
+  responsavelId String?
+  categoria     String
+  status        StatusChamado
+  criadoEm      DateTime      @default(now())
+  atualizadoEm  DateTime      @updatedAt
+
+  condominio  Condominio @relation(fields: [condominioId], references: [id])
+  unidade     Unidade?   @relation(fields: [unidadeId], references: [id])
+  abertoPor   Usuario    @relation("ChamadoAbertoPor", fields: [abertoPorId], references: [id])
+  responsavel Usuario?   @relation("ChamadoResponsavel", fields: [responsavelId], references: [id])
+
+  @@index([condominioId])
+  @@index([unidadeId])
+  @@index([abertoPorId])
+  @@index([responsavelId])
+}
+
+model Documento {
+  id           String   @id @default(cuid())
+  condominioId String
+  tipo         String
+  urlArquivo   String
+  visibilidade String
+  criadoEm     DateTime @default(now())
+
+  condominio Condominio @relation(fields: [condominioId], references: [id])
+
+  @@index([condominioId])
+}
+
+model Aviso {
+  id           String       @id @default(cuid())
+  condominioId String
+  unidadeId    String?
+  titulo       String
+  corpo        String
+  canais       CanalAviso[]
+  enviadoEm    DateTime?
+
+  condominio Condominio @relation(fields: [condominioId], references: [id])
+  unidade    Unidade?   @relation(fields: [unidadeId], references: [id])
+
+  @@index([condominioId])
+  @@index([unidadeId])
+}
+
+model AreaComum {
+  id            String @id @default(cuid())
+  condominioId  String
+  nome          String
+  regrasReserva Json
+
+  condominio Condominio @relation(fields: [condominioId], references: [id])
+  reservas   Reserva[]
+
+  @@index([condominioId])
+}
+
+model Reserva {
+  id          String   @id @default(cuid())
+  areaComumId String
+  unidadeId   String
+  inicio      DateTime
+  fim         DateTime
+  status      String
+
+  areaComum AreaComum @relation(fields: [areaComumId], references: [id])
+  unidade   Unidade   @relation(fields: [unidadeId], references: [id])
+
+  @@index([areaComumId])
+  @@index([unidadeId])
+}
+
+model ConversaBot {
+  id               String   @id @default(cuid())
+  unidadeId        String
+  telefoneWhatsapp String
+  mensagens        Json
+  criadoEm         DateTime @default(now())
+
+  unidade Unidade @relation(fields: [unidadeId], references: [id])
+
+  @@index([unidadeId])
+}

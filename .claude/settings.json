@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); file=$(echo \"$input\" | jq -r '.tool_input.file_path // empty'); if [[ \"$file\" == */apps/api/* ]]; then cd apps/api && npx tsc --noEmit && npm run lint; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

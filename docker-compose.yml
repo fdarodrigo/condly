@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: condly-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: condly
+      POSTGRES_PASSWORD: condly
+      POSTGRES_DB: condly_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - condly_postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d
+
+volumes:
+  condly_postgres_data:

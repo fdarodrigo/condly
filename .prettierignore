@@ -1,0 +1,6 @@
+node_modules
+dist
+.next
+apps/api/generated
+apps/web/.next
+coverage
