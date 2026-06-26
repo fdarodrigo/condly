@@ -11,6 +11,7 @@ import { CondominiosModule } from './condominios/condominios.module';
 import { UnidadesModule } from './unidades/unidades.module';
 import { FinanceiroModule } from './financeiro/financeiro.module';
 import { ChamadosModule } from './chamados/chamados.module';
+import { ReservasModule } from './reservas/reservas.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { ChamadosModule } from './chamados/chamados.module';
     UnidadesModule,
     FinanceiroModule,
     ChamadosModule,
+    ReservasModule,
   ],
   controllers: [AppController],
   providers: [AppService],

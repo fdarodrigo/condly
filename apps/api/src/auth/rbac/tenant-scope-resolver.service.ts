@@ -43,6 +43,35 @@ export class TenantScopeResolverService {
       };
     }
 
+    if (params.areaComumId) {
+      const areaComum = await this.prisma.areaComum.findUnique({
+        where: { id: params.areaComumId },
+        include: { condominio: true },
+      });
+      if (!areaComum) {
+        throw new NotFoundException('Área comum não encontrada.');
+      }
+      return {
+        administradoraId: areaComum.condominio.administradoraId,
+        condominioId: areaComum.condominioId,
+      };
+    }
+
+    if (params.reservaId) {
+      const reserva = await this.prisma.reserva.findUnique({
+        where: { id: params.reservaId },
+        include: { unidade: { include: { condominio: true } } },
+      });
+      if (!reserva) {
+        throw new NotFoundException('Reserva não encontrada.');
+      }
+      return {
+        administradoraId: reserva.unidade.condominio.administradoraId,
+        condominioId: reserva.unidade.condominioId,
+        unidadeId: reserva.unidadeId,
+      };
+    }
+
     if (params.condominioId) {
       const condominio = await this.prisma.condominio.findUnique({
         where: { id: params.condominioId },

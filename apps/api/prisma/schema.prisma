@@ -36,6 +36,11 @@ enum CanalAviso {
   WHATSAPP
 }
 
+enum StatusReserva {
+  CONFIRMADA
+  CANCELADA
+}
+
 model Administradora {
   id           String   @id @default(cuid())
   nome         String
@@ -200,12 +205,12 @@ model AreaComum {
 }
 
 model Reserva {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   areaComumId String
   unidadeId   String
   inicio      DateTime
   fim         DateTime
-  status      String
+  status      StatusReserva
 
   areaComum AreaComum @relation(fields: [areaComumId], references: [id])
   unidade   Unidade   @relation(fields: [unidadeId], references: [id])

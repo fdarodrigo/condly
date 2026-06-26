@@ -120,6 +120,50 @@ abertos, não ignorar silenciosamente:
   responsabilidade do service (`listar`), não do Guard — o Guard só
   decide se ele pode acessar a rota daquele condomínio.
 
+## Decisões de escopo do módulo reservas (Prompt 5)
+- Rotas adaptadas em relação ao prompt literal para caber no padrão de
+  RBAC já estabelecido (toda rota protegida por `@Roles` precisa de um
+  parâmetro que `TenantScopeResolverService` saiba resolver):
+  - `GET /areas-comuns/:areaComumId/disponibilidade?data=YYYY-MM-DD`
+    (`:id` do prompt renomeado para `:areaComumId`, mesmo padrão de
+    `:condominioId`/`:unidadeId`/`:chamadoId` já usado nos outros
+    módulos).
+  - `POST /reservas` do prompt virou
+    `POST /areas-comuns/:areaComumId/reservas` — **decisão deliberada,
+    não só de nomenclatura**: se a rota fosse aninhada em
+    `/unidades/:unidadeId/reservas` em vez de `/areas-comuns/:id`, o
+    escopo resolvido teria `unidadeId` fixo, e o filtro físico do
+    tenant (`tenant-prisma.ts`) injetaria `unidadeId` em toda query de
+    `Reserva` — inclusive na checagem de conflito, que precisa ver as
+    reservas de TODAS as unidades do condomínio na mesma área comum,
+    não só as da unidade que está reservando. Aninhar em
+    `/areas-comuns/:id` resolve escopo só até `condominioId`, e o
+    filtro físico cobre `Reserva` via `unidade.condominioId` — o
+    correto para essa checagem.
+  - `DELETE /reservas/:id` manteve o formato do prompt, só renomeando
+    `:id` para `:reservaId` — resolvido via novo branch em
+    `tenant-scope-resolver.service.ts` (Reserva → Unidade → Condomínio,
+    igual ao padrão já usado para `chamadoId`).
+- CONDOMINO só reserva em nome da própria unidade (rejeitado com 403 se
+  informar `unidadeId` de outra unidade no corpo); SINDICO e
+  ADMINISTRADORA podem reservar em nome de qualquer unidade do
+  condomínio, informando `unidadeId` explicitamente.
+- `Reserva.status` deixou de ser `String` livre e passou a enum
+  `StatusReserva` (`CONFIRMADA` | `CANCELADA`), seguindo o padrão já
+  usado em `Cobranca`/`Chamado`. Cancelamento é soft delete (`DELETE`
+  só atualiza o status, nunca remove a linha) — cancelar uma reserva já
+  cancelada é rejeitado com 400.
+- `regrasReserva` (`Json` em `AreaComum`) tem o formato
+  `{ horarioAbertura, horarioFechamento, duracaoMinimaMinutos,
+  antecedenciaMaximaDias }` — ainda não documentado/validado por DTO
+  porque não existe endpoint de cadastro de `AreaComum` neste prompt
+  (criada só via seed/script); se um endpoint de cadastro for criado,
+  validar esse shape explicitamente em vez de confiar no formato.
+- Conflito de horário na criação retorna 409 (não 400) com
+  `sugestoes` — até 3 horários livres no mesmo dia, ordenados por
+  proximidade ao horário pedido (não cronologicamente a partir da
+  abertura).
+
 ## Pendência para o Prompt 10 (seed)
 `Unidade` ganhou os campos opcionais `responsavelNome`, `responsavelEmail`
 e `responsavelCpfCnpj` (ver módulo financeiro). Quando o seed de demonstração
