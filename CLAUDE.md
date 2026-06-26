@@ -55,9 +55,23 @@ genérico (utilitários, helpers sem relação direta com o domínio) segue
 a convenção padrão em inglês do ecossistema Node/TypeScript. Não
 misture os dois dentro da mesma entidade.
 
-## Débito técnico conhecido (revisão de segurança pós-Prompt 3)
+## Débito técnico conhecido (revisão de segurança pós-Prompt 3, reauditado pós-Prompt 4)
 Review do tenant-security-reviewer sobre schema + auth/RBAC + financeiro.
-Nenhum CRÍTICO encontrado. Itens abertos, não ignorar silenciosamente:
+Reauditado retroativamente sobre toda a base (Prompts 1-4) após o
+commit inicial — nenhum CRÍTICO encontrado nas duas rodadas. Itens
+abertos, não ignorar silenciosamente:
+- **AVISO** (corrigido): `ChamadosService.atualizar` validava
+  `responsavelId` só checando se o `Usuario` existia, sem checar tenant
+  — `usuario` não tem `administradoraId`/`condominioId`/`unidadeId`
+  direto, então não está em `CONDOMINIO_ID_MODELS`/`UNIDADE_ID_MODELS`
+  de `tenant-prisma.ts` e a query rodava sem filtro de tenant. Corrigido
+  validando que existe um `VinculoUsuario` para `responsavelId` cujo
+  `condominioId`, `administradoraId` (via o condomínio do chamado) ou
+  `unidade.condominioId` bate com o condomínio do chamado
+  (`chamados.service.ts`, método `atualizar`) — rejeita com 400 caso
+  contrário. Cobertura em `chamados.integration-spec.ts` (atribuição
+  válida entre níveis do mesmo tenant, e rejeição de usuário de outro
+  condomínio/administradora e de usuário sem vínculo nenhum).
 - **AVISO** (corrigido): `tenant-prisma.ts` não filtrava Cobranca/Reserva/
   ConversaBot quando o escopo resolvido era só `condominioId` (sem
   `unidadeId`) — ex. rotas `/condominios/:id/*`. Hoje esses modelos só são

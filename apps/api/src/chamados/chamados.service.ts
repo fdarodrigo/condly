@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { TenantPrismaClient } from '../prisma/tenant-prisma';
 import { AuthenticatedUser } from '../auth/types/auth.types';
@@ -76,11 +76,27 @@ export class ChamadosService {
     }
 
     if (dto.responsavelId) {
-      const responsavel = await tenantPrisma.usuario.findUnique({
-        where: { id: dto.responsavelId },
+      // `Usuario` não tem administradoraId/condominioId direto — sem essa
+      // checagem manual, qualquer Usuario existente no banco (de qualquer
+      // tenant) seria aceito como responsável, já que `usuario` não está em
+      // CONDOMINIO_ID_MODELS/UNIDADE_ID_MODELS do filtro físico.
+      const condominio = await tenantPrisma.condominio.findUnique({
+        where: { id: chamadoAtual.condominioId },
       });
-      if (!responsavel) {
-        throw new NotFoundException('Usuário responsável não encontrado.');
+      const vinculo = await tenantPrisma.vinculoUsuario.findFirst({
+        where: {
+          usuarioId: dto.responsavelId,
+          OR: [
+            { condominioId: chamadoAtual.condominioId },
+            { administradoraId: condominio?.administradoraId },
+            { unidade: { condominioId: chamadoAtual.condominioId } },
+          ],
+        },
+      });
+      if (!vinculo) {
+        throw new BadRequestException(
+          'O usuário responsável precisa ter vínculo com o condomínio deste chamado.',
+        );
       }
     }
 

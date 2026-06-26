@@ -188,6 +188,78 @@ describe('Módulo chamados', () => {
       expect(res.status).toBe(403);
     });
 
+    it('aceita responsavelId de um usuário com vínculo no mesmo tenant (administradora do próprio condomínio)', async () => {
+      const abertura = await request(app.getHttpServer())
+        .post(`/condominios/${fixtures.condominio1.id}/chamados`)
+        .set('Authorization', `Bearer ${tokenSindico}`)
+        .send({ categoria: 'interfone' });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/chamados/${abertura.body.id}`)
+        .set('Authorization', `Bearer ${tokenSindico}`)
+        .send({ responsavelId: fixtures.usuarioAdministradora.id });
+
+      expect(res.status).toBe(200);
+      expect(res.body.responsavelId).toBe(fixtures.usuarioAdministradora.id);
+    });
+
+    it('rejeita com 400 responsavelId de usuário de outro condomínio/administradora', async () => {
+      const usuarioOutroTenant = await prisma.usuario.create({
+        data: {
+          nome: 'Síndico de outro tenant',
+          email: 'sindico-outro-tenant@example.com',
+          senhaHash: 'hash-irrelevante-para-este-teste',
+        },
+      });
+      await prisma.vinculoUsuario.create({
+        data: {
+          usuarioId: usuarioOutroTenant.id,
+          papel: 'SINDICO',
+          condominioId: fixtures.condominio2.id,
+        },
+      });
+
+      const abertura = await request(app.getHttpServer())
+        .post(`/condominios/${fixtures.condominio1.id}/chamados`)
+        .set('Authorization', `Bearer ${tokenSindico}`)
+        .send({ categoria: 'pintura' });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/chamados/${abertura.body.id}`)
+        .set('Authorization', `Bearer ${tokenSindico}`)
+        .send({ responsavelId: usuarioOutroTenant.id });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/vínculo com o condomínio/i);
+
+      const chamadoInalterado = await prisma.chamado.findUnique({
+        where: { id: abertura.body.id },
+      });
+      expect(chamadoInalterado?.responsavelId).toBeNull();
+    });
+
+    it('rejeita com 400 responsavelId de usuário sem nenhum vínculo', async () => {
+      const usuarioSemVinculo = await prisma.usuario.create({
+        data: {
+          nome: 'Usuário sem vínculo',
+          email: 'sem-vinculo@example.com',
+          senhaHash: 'hash-irrelevante-para-este-teste',
+        },
+      });
+
+      const abertura = await request(app.getHttpServer())
+        .post(`/condominios/${fixtures.condominio1.id}/chamados`)
+        .set('Authorization', `Bearer ${tokenSindico}`)
+        .send({ categoria: 'limpeza' });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/chamados/${abertura.body.id}`)
+        .set('Authorization', `Bearer ${tokenSindico}`)
+        .send({ responsavelId: usuarioSemVinculo.id });
+
+      expect(res.status).toBe(400);
+    });
+
     it('síndico de outro tenant NÃO pode atualizar o chamado (403)', async () => {
       const chamadoOutroTenant = await prisma.chamado.create({
         data: {
