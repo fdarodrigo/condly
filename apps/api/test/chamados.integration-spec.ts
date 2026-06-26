@@ -7,6 +7,8 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { limparBanco } from './helpers/cleanup-database';
 import { criarFixtures, SENHA_PLANA } from './helpers/auth-fixtures';
 import { CHAMADO_STATUS_ALTERADO } from '../src/chamados/events/chamado-status-alterado.event';
+import { CHAMADO_REABERTO } from '../src/chamados/events/chamado-reaberto.event';
+import { StatusChamado } from '../generated/prisma/client';
 
 describe('Módulo chamados', () => {
   let app: INestApplication;
@@ -279,6 +281,108 @@ describe('Módulo chamados', () => {
     });
   });
 
+  describe('PATCH /chamados/:chamadoId — máquina de estados', () => {
+    async function criarChamadoComStatus(status: StatusChamado) {
+      return prisma.chamado.create({
+        data: {
+          condominioId: fixtures.condominio1.id,
+          abertoPorId: fixtures.usuarioSindico.id,
+          categoria: 'teste-transicao',
+          status,
+        },
+      });
+    }
+
+    const TRANSICOES_VALIDAS: Array<[StatusChamado, StatusChamado]> = [
+      ['PENDENTE_TRIAGEM', 'ABERTO'],
+      ['ABERTO', 'EM_ANDAMENTO'],
+      ['EM_ANDAMENTO', 'RESOLVIDO'],
+      ['RESOLVIDO', 'ABERTO'],
+    ];
+
+    it.each(TRANSICOES_VALIDAS)('permite a transição %s → %s', async (de, para) => {
+      const chamado = await criarChamadoComStatus(de);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/chamados/${chamado.id}`)
+        .set('Authorization', `Bearer ${tokenSindico}`)
+        .send({ status: para });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe(para);
+    });
+
+    it('reabertura (RESOLVIDO → ABERTO) grava reabertoEm e dispara chamado.reaberto, além de chamado.status_alterado', async () => {
+      const chamado = await criarChamadoComStatus('RESOLVIDO');
+
+      const eventosStatus: unknown[] = [];
+      const eventosReabertura: unknown[] = [];
+      const listenerStatus = (evento: unknown) => eventosStatus.push(evento);
+      const listenerReabertura = (evento: unknown) => eventosReabertura.push(evento);
+      eventEmitter.on(CHAMADO_STATUS_ALTERADO, listenerStatus);
+      eventEmitter.on(CHAMADO_REABERTO, listenerReabertura);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/chamados/${chamado.id}`)
+        .set('Authorization', `Bearer ${tokenSindico}`)
+        .send({ status: 'ABERTO' });
+
+      eventEmitter.off(CHAMADO_STATUS_ALTERADO, listenerStatus);
+      eventEmitter.off(CHAMADO_REABERTO, listenerReabertura);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('ABERTO');
+      expect(res.body.reabertoEm).not.toBeNull();
+
+      expect(eventosStatus).toHaveLength(1);
+      expect(eventosStatus[0]).toMatchObject({
+        chamadoId: chamado.id,
+        statusAnterior: 'RESOLVIDO',
+        statusNovo: 'ABERTO',
+      });
+
+      expect(eventosReabertura).toHaveLength(1);
+      expect(eventosReabertura[0]).toMatchObject({
+        chamadoId: chamado.id,
+        condominioId: fixtures.condominio1.id,
+      });
+    });
+
+    const TRANSICOES_INVALIDAS: Array<[StatusChamado, StatusChamado]> = [
+      // pular a triagem
+      ['PENDENTE_TRIAGEM', 'RESOLVIDO'],
+      ['PENDENTE_TRIAGEM', 'EM_ANDAMENTO'],
+      // voltar de ABERTO para a triagem, ou pular direto pra RESOLVIDO
+      ['ABERTO', 'PENDENTE_TRIAGEM'],
+      ['ABERTO', 'RESOLVIDO'],
+      // retroceder a partir de EM_ANDAMENTO
+      ['EM_ANDAMENTO', 'ABERTO'],
+      ['EM_ANDAMENTO', 'PENDENTE_TRIAGEM'],
+      // qualquer coisa a partir de RESOLVIDO que não seja a reabertura
+      ['RESOLVIDO', 'PENDENTE_TRIAGEM'],
+      ['RESOLVIDO', 'EM_ANDAMENTO'],
+      // "transição" para o mesmo status atual, em todo estado
+      ['PENDENTE_TRIAGEM', 'PENDENTE_TRIAGEM'],
+      ['ABERTO', 'ABERTO'],
+      ['EM_ANDAMENTO', 'EM_ANDAMENTO'],
+      ['RESOLVIDO', 'RESOLVIDO'],
+    ];
+
+    it.each(TRANSICOES_INVALIDAS)('rejeita com 400 a transição %s → %s', async (de, para) => {
+      const chamado = await criarChamadoComStatus(de);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/chamados/${chamado.id}`)
+        .set('Authorization', `Bearer ${tokenSindico}`)
+        .send({ status: para });
+
+      expect(res.status).toBe(400);
+
+      const inalterado = await prisma.chamado.findUnique({ where: { id: chamado.id } });
+      expect(inalterado?.status).toBe(de);
+    });
+  });
+
   describe('GET /condominios/:condominioId/chamados', () => {
     it('lista respeitando o isolamento multi-tenant e o filtro por status', async () => {
       await prisma.chamado.deleteMany({});
@@ -329,9 +433,56 @@ describe('Módulo chamados', () => {
       expect(comFiltro.body[0].categoria).toBe('aberto-c1');
     });
 
-    it('condômino NÃO acessa a listagem (403)', async () => {
+    it('condômino vê só os chamados que abriu ou que são da própria unidade — nunca de outra unidade do mesmo condomínio', async () => {
+      await prisma.chamado.deleteMany({});
+
+      const unidadeOutroMorador = await prisma.unidade.create({
+        data: { condominioId: fixtures.condominio1.id, identificador: '202', tipo: 'apartamento' },
+      });
+
+      const abertoPeloProprioCondomino = await prisma.chamado.create({
+        data: {
+          condominioId: fixtures.condominio1.id,
+          unidadeId: fixtures.unidade1.id,
+          abertoPorId: fixtures.usuarioCondomino.id,
+          categoria: 'aberto-pelo-proprio',
+          status: 'PENDENTE_TRIAGEM',
+        },
+      });
+      const daPropriaUnidadeAbertoPorOutroAutor = await prisma.chamado.create({
+        data: {
+          condominioId: fixtures.condominio1.id,
+          unidadeId: fixtures.unidade1.id,
+          abertoPorId: fixtures.usuarioSindico.id,
+          categoria: 'da-propria-unidade-aberto-pelo-sindico',
+          status: 'ABERTO',
+        },
+      });
+      const deOutraUnidade = await prisma.chamado.create({
+        data: {
+          condominioId: fixtures.condominio1.id,
+          unidadeId: unidadeOutroMorador.id,
+          abertoPorId: fixtures.usuarioSindico.id,
+          categoria: 'de-outra-unidade',
+          status: 'ABERTO',
+        },
+      });
+
       const res = await request(app.getHttpServer())
         .get(`/condominios/${fixtures.condominio1.id}/chamados`)
+        .set('Authorization', `Bearer ${tokenCondomino}`);
+
+      expect(res.status).toBe(200);
+      const idsRetornados = res.body.map((c: { id: string }) => c.id);
+      expect(idsRetornados.sort()).toEqual(
+        [abertoPeloProprioCondomino.id, daPropriaUnidadeAbertoPorOutroAutor.id].sort(),
+      );
+      expect(idsRetornados).not.toContain(deOutraUnidade.id);
+    });
+
+    it('condômino de outro tenant NÃO acessa a listagem do condomínio (403)', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/condominios/${fixtures.condominio2.id}/chamados`)
         .set('Authorization', `Bearer ${tokenCondomino}`);
 
       expect(res.status).toBe(403);

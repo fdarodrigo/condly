@@ -145,6 +145,7 @@ model Chamado {
   status        StatusChamado
   criadoEm      DateTime      @default(now())
   atualizadoEm  DateTime      @updatedAt
+  reabertoEm    DateTime?
 
   condominio  Condominio @relation(fields: [condominioId], references: [id])
   unidade     Unidade?   @relation(fields: [unidadeId], references: [id])

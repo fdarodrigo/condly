@@ -9,6 +9,17 @@ import {
   CHAMADO_STATUS_ALTERADO,
   ChamadoStatusAlteradoEvent,
 } from './events/chamado-status-alterado.event';
+import { CHAMADO_REABERTO, ChamadoReabertoEvent } from './events/chamado-reaberto.event';
+
+// Lista de permissão explícita: qualquer transição não listada aqui é
+// rejeitada, incluindo pares "razoáveis" como PENDENTE_TRIAGEM →
+// EM_ANDAMENTO (pular a triagem não é permitido mesmo indiretamente).
+const TRANSICOES_VALIDAS: Record<StatusChamado, StatusChamado[]> = {
+  PENDENTE_TRIAGEM: ['ABERTO'],
+  ABERTO: ['EM_ANDAMENTO'],
+  EM_ANDAMENTO: ['RESOLVIDO'],
+  RESOLVIDO: ['ABERTO'],
+};
 
 @Injectable()
 export class ChamadosService {
@@ -58,13 +69,52 @@ export class ChamadosService {
     return chamado;
   }
 
-  listar(
+  /**
+   * ADMINISTRADORA e SINDICO (do próprio condomínio) veem todos os
+   * chamados. CONDOMINO só vê os que abriu ou que pertencem à própria
+   * unidade — nunca chamados de outras unidades do mesmo condomínio,
+   * mesmo que o vínculo dele autorize o acesso à rota (nível condomínio).
+   */
+  async listar(
     condominioId: string,
     status: StatusChamado | undefined,
+    usuario: AuthenticatedUser,
     tenantPrisma: TenantPrismaClient,
   ) {
+    const temVinculoAdministradora = usuario.vinculos.some(
+      (vinculo) => vinculo.papel === 'ADMINISTRADORA',
+    );
+    // Só busca o condomínio se houver um vínculo ADMINISTRADORA a verificar —
+    // evita a query extra no caso comum (SINDICO/CONDOMINO já resolvem por
+    // condominioId direto, sem precisar saber a administradoraId).
+    const administradoraIdDoCondominio = temVinculoAdministradora
+      ? (await tenantPrisma.condominio.findUnique({ where: { id: condominioId } }))
+          ?.administradoraId
+      : undefined;
+
+    const vinculoAmplo = usuario.vinculos.some((vinculo) => {
+      if (vinculo.papel === 'SINDICO') {
+        return vinculo.condominioId === condominioId;
+      }
+      if (vinculo.papel === 'ADMINISTRADORA') {
+        return vinculo.administradoraId === administradoraIdDoCondominio;
+      }
+      return false;
+    });
+
+    const vinculoCondomino = usuario.vinculos.find(
+      (vinculo) => vinculo.papel === 'CONDOMINO' && vinculo.condominioId === condominioId,
+    );
+
+    const filtroVisibilidade =
+      !vinculoAmplo && vinculoCondomino
+        ? {
+            OR: [{ abertoPorId: usuario.usuarioId }, { unidadeId: vinculoCondomino.unidadeId }],
+          }
+        : {};
+
     return tenantPrisma.chamado.findMany({
-      where: { condominioId, ...(status ? { status } : {}) },
+      where: { condominioId, ...(status ? { status } : {}), ...filtroVisibilidade },
       orderBy: { criadoEm: 'desc' },
     });
   }
@@ -100,22 +150,39 @@ export class ChamadosService {
       }
     }
 
+    let ehReabertura = false;
+    if (dto.status) {
+      if (dto.status === chamadoAtual.status) {
+        throw new BadRequestException(`O chamado já está com status ${dto.status}.`);
+      }
+      if (!TRANSICOES_VALIDAS[chamadoAtual.status].includes(dto.status)) {
+        throw new BadRequestException(
+          `Transição de status inválida: ${chamadoAtual.status} → ${dto.status}.`,
+        );
+      }
+      ehReabertura = chamadoAtual.status === 'RESOLVIDO' && dto.status === 'ABERTO';
+    }
+
     const chamadoAtualizado = await tenantPrisma.chamado.update({
       where: { id: chamadoId },
       data: {
         ...(dto.status ? { status: dto.status } : {}),
         ...(dto.categoria ? { categoria: dto.categoria } : {}),
         ...(dto.responsavelId !== undefined ? { responsavelId: dto.responsavelId } : {}),
+        ...(ehReabertura ? { reabertoEm: new Date() } : {}),
       },
     });
 
-    if (dto.status && dto.status !== chamadoAtual.status) {
+    if (dto.status) {
       this.emitirMudancaDeStatus(
         chamadoId,
         chamadoAtual.condominioId,
         chamadoAtual.status,
         dto.status,
       );
+      if (ehReabertura) {
+        this.emitirReabertura(chamadoId, chamadoAtual.condominioId, chamadoAtualizado.reabertoEm!);
+      }
     }
 
     return chamadoAtualizado;
@@ -134,5 +201,10 @@ export class ChamadosService {
       statusNovo,
     };
     this.eventEmitter.emit(CHAMADO_STATUS_ALTERADO, evento);
+  }
+
+  private emitirReabertura(chamadoId: string, condominioId: string, reabertoEm: Date) {
+    const evento: ChamadoReabertoEvent = { chamadoId, condominioId, reabertoEm };
+    this.eventEmitter.emit(CHAMADO_REABERTO, evento);
   }
 }

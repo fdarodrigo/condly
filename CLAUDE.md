@@ -92,20 +92,33 @@ abertos, não ignorar silenciosamente:
   webhook com `idExternoGateway` desconhecido — dificulta auditoria caso o
   token de webhook seja comprometido (logar só o id, nunca o payload).
 
-## Decisões de escopo do módulo chamados (Prompt 4)
+## Decisões de escopo do módulo chamados (Prompt 4, revisado no Prompt B)
 - `POST /condominios/:id/chamados`: só SINDICO e CONDOMINO abrem chamado
   (literal do prompt) — ADMINISTRADORA não está autorizada nesse endpoint.
-- `GET /condominios/:id/chamados`: só ADMINISTRADORA e SINDICO listam —
-  CONDOMINO não tem endpoint de listagem neste prompt (evita decidir agora
-  se ele veria chamados de outros moradores do mesmo condomínio).
-- `PATCH /chamados/:id` aceita status livremente (sem máquina de estados
-  que bloqueie transição "inválida") — só a sequência feliz é testada.
+- `GET /condominios/:id/chamados`: ADMINISTRADORA e SINDICO veem todos os
+  chamados do condomínio. Desde o Prompt B, CONDOMINO também acessa esta
+  rota (mesmo endpoint, sem rota nova), mas `ChamadosService.listar` filtra
+  o resultado para só os chamados que ele abriu ou que pertencem à própria
+  unidade — nunca chamados de outras unidades do mesmo condomínio. Decisão
+  resolvida originalmente deixada em aberto no Prompt 4.
+- `PATCH /chamados/:id` agora aplica uma máquina de estados explícita
+  (`TRANSICOES_VALIDAS` em `chamados.service.ts`, lista de permissão, não
+  bloqueio): PENDENTE_TRIAGEM→ABERTO, ABERTO→EM_ANDAMENTO,
+  EM_ANDAMENTO→RESOLVIDO, RESOLVIDO→ABERTO (reabertura). Qualquer outra
+  transição (incluindo pular a triagem, voltar de ABERTO para
+  PENDENTE_TRIAGEM, ou "transicionar" para o mesmo status atual) é
+  rejeitada com 400. Reabertura (RESOLVIDO→ABERTO) grava `reabertoEm` e
+  dispara o evento `chamado.reaberto` além do `chamado.status_alterado`
+  normal — tratada como operacionalmente distinta de uma transição comum.
 - RBAC ganhou checagem por papel (`vinculoAutoriza` em
   `auth/rbac/roles.guard.ts`): CONDOMINO autoriza por `condominioId`
   (resolvido a partir da própria unidade no login) quando o recurso é de
-  nível condomínio sem unidade alvo (ex: abrir chamado), mas continua
-  restrito à própria unidade quando o recurso é de nível unidade — não
-  ganha acesso a outras unidades do mesmo condomínio.
+  nível condomínio sem unidade alvo (ex: abrir chamado, listar
+  chamados), mas continua restrito à própria unidade quando o recurso é
+  de nível unidade — não ganha acesso a outras unidades do mesmo
+  condomínio. A restrição de *quais* chamados ele vê na listagem é
+  responsabilidade do service (`listar`), não do Guard — o Guard só
+  decide se ele pode acessar a rota daquele condomínio.
 
 ## Pendência para o Prompt 10 (seed)
 `Unidade` ganhou os campos opcionais `responsavelNome`, `responsavelEmail`

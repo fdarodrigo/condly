@@ -40,13 +40,14 @@ export class ChamadosController {
   }
 
   @Get('condominios/:condominioId/chamados')
-  @Roles('ADMINISTRADORA', 'SINDICO')
+  @Roles('ADMINISTRADORA', 'SINDICO', 'CONDOMINO')
   listarChamados(
     @Param('condominioId') condominioId: string,
     @Query() query: ListarChamadosQueryDto,
+    @CurrentUser() usuario: AuthenticatedUser,
     @CurrentTenantPrisma() prisma: TenantPrismaClient,
   ) {
-    return this.chamadosService.listar(condominioId, query.status, prisma);
+    return this.chamadosService.listar(condominioId, query.status, usuario, prisma);
   }
 
   @Patch('chamados/:chamadoId')
