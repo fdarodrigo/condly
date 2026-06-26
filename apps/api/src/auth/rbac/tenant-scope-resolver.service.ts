@@ -72,6 +72,20 @@ export class TenantScopeResolverService {
       };
     }
 
+    if (params.documentoId) {
+      const documento = await this.prisma.documento.findUnique({
+        where: { id: params.documentoId },
+        include: { condominio: true },
+      });
+      if (!documento) {
+        throw new NotFoundException('Documento não encontrado.');
+      }
+      return {
+        administradoraId: documento.condominio.administradoraId,
+        condominioId: documento.condominioId,
+      };
+    }
+
     if (params.condominioId) {
       const condominio = await this.prisma.condominio.findUnique({
         where: { id: params.condominioId },

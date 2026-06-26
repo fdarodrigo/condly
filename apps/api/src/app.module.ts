@@ -12,6 +12,7 @@ import { UnidadesModule } from './unidades/unidades.module';
 import { FinanceiroModule } from './financeiro/financeiro.module';
 import { ChamadosModule } from './chamados/chamados.module';
 import { ReservasModule } from './reservas/reservas.module';
+import { DocumentosModule } from './documentos/documentos.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ReservasModule } from './reservas/reservas.module';
     FinanceiroModule,
     ChamadosModule,
     ReservasModule,
+    DocumentosModule,
   ],
   controllers: [AppController],
   providers: [AppService],

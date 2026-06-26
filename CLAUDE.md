@@ -164,6 +164,52 @@ abertos, não ignorar silenciosamente:
   proximidade ao horário pedido (não cronologicamente a partir da
   abertura).
 
+## Decisões de escopo do módulo documentos (Prompt 6)
+- Cliente de storage segue o mesmo padrão do Asaas em `financeiro/`: uma
+  interface (`R2Client` em `documentos/storage/r2-client.interface.ts`) com
+  token de DI `R2_CLIENT`, uma implementação real via S3 SDK
+  (`R2S3Client`, compatível com R2 por endpoint customizado) e um fake
+  (`test/helpers/fake-r2-client.ts`) injetado via `overrideProvider` nos
+  testes de integração — nenhum teste depende de rede ou credenciais reais.
+- `Documento.visibilidade` deixou de ser `String` livre e passou a enum
+  `VisibilidadeDocumento` (`TODOS` | `SINDICO_ADMINISTRADORA`), seguindo o
+  padrão já usado em `Chamado`/`Reserva` — a lógica de RBAC depende do
+  valor exato, então um enum fechado evita um typo silenciosamente
+  liberando ou restringindo acesso. `tipo` continua `String` livre (não há
+  lógica de autorização condicionada a ele, só o agrupamento visual no
+  frontend).
+- `Documento.urlArquivo` guarda a **key do objeto no R2**, não uma URL
+  pública — o campo manteve o nome do schema original, mas o valor nunca é
+  servido diretamente. Acesso é sempre via signed URL de curta duração
+  gerada sob demanda (`GET /documentos/:documentoId/download-url`),
+  nunca por um link permanente — decisão deliberada, não só de
+  nomenclatura, já que uma URL pública e permanente quebraria o controle
+  de visibilidade após a primeira geração.
+- `POST /condominios/:condominioId/documentos/upload-url` só aceita
+  SINDICO e ADMINISTRADORA — CONDOMINO não cadastra documentos oficiais
+  do condomínio (ata, prestação de contas etc.), só consome. `contentType`
+  é validado contra uma lista de permissão (`TIPOS_MIME_PERMITIDOS` em
+  `criar-upload-url.dto.ts`: PDF, JPEG, PNG) — sem isso, a signed URL
+  assinaria upload de qualquer `Content-Type` arbitrário para um objeto
+  que depois pode ser baixado por outro usuário do mesmo condomínio.
+- `GET /condominios/:condominioId/documentos` e
+  `GET /documentos/:documentoId/download-url` ficam abertos a
+  ADMINISTRADORA/SINDICO/CONDOMINO no nível do Guard (igual ao padrão já
+  usado em chamados) — a restrição por `visibilidade` é responsabilidade
+  do `DocumentosService` (`temAcessoAmplo`, espelhando `vinculoAmplo` de
+  `ChamadosService.listar`), não do Guard: CONDOMINO só vê/baixa
+  documentos `TODOS`, nunca `SINDICO_ADMINISTRADORA`, mesmo que o vínculo
+  autorize o acesso à rota daquele condomínio.
+- `:id` do prompt em `GET /documentos/:id/download-url` renomeado para
+  `:documentoId`, mesmo padrão de `:reservaId`/`:chamadoId` — resolvido
+  via novo branch em `tenant-scope-resolver.service.ts`
+  (Documento → Condomínio).
+- Expiração da signed URL de download é fixa em 300s (5 minutos),
+  constante em `DocumentosService`. O teste de integração verifica a
+  regra observando o parâmetro `expiresInSeconds` recebido pelo
+  `FakeR2Client`, não esperando o tempo real passar — a expiração real é
+  responsabilidade do SDK do S3/R2, fora do escopo do backend.
+
 ## Pendência para o Prompt 10 (seed)
 `Unidade` ganhou os campos opcionais `responsavelNome`, `responsavelEmail`
 e `responsavelCpfCnpj` (ver módulo financeiro). Quando o seed de demonstração

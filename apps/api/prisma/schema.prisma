@@ -41,6 +41,11 @@ enum StatusReserva {
   CANCELADA
 }
 
+enum VisibilidadeDocumento {
+  TODOS
+  SINDICO_ADMINISTRADORA
+}
+
 model Administradora {
   id           String   @id @default(cuid())
   nome         String
@@ -164,12 +169,14 @@ model Chamado {
 }
 
 model Documento {
-  id           String   @id @default(cuid())
+  id           String                @id @default(cuid())
   condominioId String
   tipo         String
+  // Guarda a key do objeto no R2, não uma URL pública — o arquivo só é
+  // acessível via signed URL de curta duração (ver DocumentosService).
   urlArquivo   String
-  visibilidade String
-  criadoEm     DateTime @default(now())
+  visibilidade VisibilidadeDocumento
+  criadoEm     DateTime              @default(now())
 
   condominio Condominio @relation(fields: [condominioId], references: [id])
 
