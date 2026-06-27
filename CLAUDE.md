@@ -210,6 +210,48 @@ abertos, não ignorar silenciosamente:
   `FakeR2Client`, não esperando o tempo real passar — a expiração real é
   responsabilidade do SDK do S3/R2, fora do escopo do backend.
 
+## Decisões de escopo do módulo avisos (Prompt 7)
+- Novo model `AvisoLeitura` (uma linha por par aviso/destinatário, `lidoEm`
+  null = não lido) sustenta o canal APP e `GET /usuarios/me/avisos`. Não
+  tem `condominioId`/`unidadeId` próprio, então não entra em
+  `CONDOMINIO_ID_MODELS`/`UNIDADE_ID_MODELS` de `tenant-prisma.ts` — o
+  tenant já foi validado no momento da criação (`AvisosService` só grava
+  linha pros usuários que de fato têm vínculo no escopo do aviso, resolvido
+  a partir do `condominioId`/`unidadeId` já validado da rota), mesmo padrão
+  de exceção documentado para `vinculoUsuario` no item de débito técnico
+  abaixo (responsavelId do chamado).
+- `GET /usuarios/me/avisos` é uma rota "minha conta": não tem
+  `condominioId` no path pro `TenantScopeResolverService` resolver (um
+  usuário pode ter vínculo com vários condomínios). Por isso o handler
+  não leva `@Roles` (o `RolesGuard` libera direto, sem checar escopo) nem
+  passa pelo `tenantPrisma` resolvido — o filtro de tenant aqui é a própria
+  igualdade `usuarioId = usuário logado` em `AvisosService.listarNaoLidos`,
+  que é estritamente mais específico que um filtro por tenant.
+- Destinatários de um aviso são SINDICO + CONDOMINO do escopo, nunca
+  ADMINISTRADORA — quem cria o aviso é normalmente a própria
+  administradora, então notificá-la do próprio aviso não faz sentido.
+  Escopo "unidade específica" (`dto.unidadeId` informado) notifica só o(s)
+  CONDOMINO daquela unidade, nem o síndico nem outras unidades; escopo
+  "condomínio inteiro" (sem `unidadeId`) notifica o síndico do condomínio e
+  todo CONDOMINO de qualquer unidade dele.
+- Canal EMAIL usa a Resend API (`avisos/email/`, mesmo padrão do client do
+  Asaas: interface + implementação HTTP real + fake injetado via
+  `overrideProvider` nos testes). O nome de exibição do remetente é o nome
+  da Administradora (`condominio.administradora.nome`) — co-branding leve
+  — mas o endereço de envio em si (`RESEND_FROM_EMAIL`) é fixo, porque é o
+  único domínio verificado na conta Resend; a Administradora não tem
+  domínio próprio cadastrado lá.
+- Canal WHATSAPP só chama `WhatsappClient.enviarAvisoWhatsapp(aviso)` —
+  stub deliberado (`WhatsappStubClient`) que não faz nada e nunca lança
+  erro, seguindo o mesmo padrão de DI por interface dos outros clients
+  externos (Asaas, R2). Implementação real (Meta WhatsApp Cloud API) entra
+  no Prompt 9, só troca o provider em `AvisosModule`.
+- Cada canal selecionado em `canais` dispara seu efeito de forma
+  independente: sem EMAIL, nenhum e-mail é enviado mesmo que haja
+  destinatários; sem APP, nenhuma `AvisoLeitura` é criada (o aviso nunca
+  aparece em `GET /usuarios/me/avisos`, mesmo tendo sido enviado por
+  EMAIL/WHATSAPP).
+
 ## Pendência para o Prompt 10 (seed)
 `Unidade` ganhou os campos opcionais `responsavelNome`, `responsavelEmail`
 e `responsavelCpfCnpj` (ver módulo financeiro). Quando o seed de demonstração

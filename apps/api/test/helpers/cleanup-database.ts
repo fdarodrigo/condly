@@ -8,6 +8,7 @@ import { PrismaService } from '../../src/prisma/prisma.service';
  */
 export async function limparBanco(prisma: PrismaService): Promise<void> {
   await prisma.vinculoUsuario.deleteMany();
+  await prisma.avisoLeitura.deleteMany();
   await prisma.conversaBot.deleteMany();
   await prisma.reserva.deleteMany();
   await prisma.cobranca.deleteMany();

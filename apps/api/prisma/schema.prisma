@@ -110,6 +110,7 @@ model Usuario {
   vinculos            VinculoUsuario[]
   chamadosAbertos     Chamado[]        @relation("ChamadoAbertoPor")
   chamadosResponsavel Chamado[]        @relation("ChamadoResponsavel")
+  avisoLeituras       AvisoLeitura[]
 }
 
 model VinculoUsuario {
@@ -192,11 +193,31 @@ model Aviso {
   canais       CanalAviso[]
   enviadoEm    DateTime?
 
-  condominio Condominio @relation(fields: [condominioId], references: [id])
-  unidade    Unidade?   @relation(fields: [unidadeId], references: [id])
+  condominio Condominio     @relation(fields: [condominioId], references: [id])
+  unidade    Unidade?       @relation(fields: [unidadeId], references: [id])
+  leituras   AvisoLeitura[]
 
   @@index([condominioId])
   @@index([unidadeId])
+}
+
+// Uma linha por (aviso, destinatário do escopo) — existe só pro canal APP.
+// `lidoEm` null é o estado "não lido" consultado por GET /usuarios/me/avisos;
+// não tem condominioId/unidadeId próprio porque o tenant já foi validado no
+// momento da criação (AvisosService só cria linhas pros usuários que
+// realmente têm vínculo no escopo do aviso) — ver CLAUDE.md.
+model AvisoLeitura {
+  id        String    @id @default(cuid())
+  avisoId   String
+  usuarioId String
+  lidoEm    DateTime?
+
+  aviso   Aviso   @relation(fields: [avisoId], references: [id])
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@unique([avisoId, usuarioId])
+  @@index([avisoId])
+  @@index([usuarioId])
 }
 
 model AreaComum {

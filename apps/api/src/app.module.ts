@@ -13,6 +13,7 @@ import { FinanceiroModule } from './financeiro/financeiro.module';
 import { ChamadosModule } from './chamados/chamados.module';
 import { ReservasModule } from './reservas/reservas.module';
 import { DocumentosModule } from './documentos/documentos.module';
+import { AvisosModule } from './avisos/avisos.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { DocumentosModule } from './documentos/documentos.module';
     ChamadosModule,
     ReservasModule,
     DocumentosModule,
+    AvisosModule,
   ],
   controllers: [AppController],
   providers: [AppService],
