@@ -14,6 +14,7 @@ import { ChamadosModule } from './chamados/chamados.module';
 import { ReservasModule } from './reservas/reservas.module';
 import { DocumentosModule } from './documentos/documentos.module';
 import { AvisosModule } from './avisos/avisos.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AvisosModule } from './avisos/avisos.module';
     ReservasModule,
     DocumentosModule,
     AvisosModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],

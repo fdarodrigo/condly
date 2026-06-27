@@ -55,13 +55,14 @@ genérico (utilitários, helpers sem relação direta com o domínio) segue
 a convenção padrão em inglês do ecossistema Node/TypeScript. Não
 misture os dois dentro da mesma entidade.
 
-## Débito técnico conhecido (revisão de segurança pós-Prompt 3, reauditado pós-Prompt 4 e pós-Prompt 7)
+## Débito técnico conhecido (revisão de segurança pós-Prompt 3, reauditado pós-Prompt 4, pós-Prompt 7 e pós-Prompt 8)
 Review do tenant-security-reviewer sobre schema + auth/RBAC + financeiro.
 Reauditado retroativamente sobre toda a base (Prompts 1-4) após o
-commit inicial, e de novo sobre os módulos de chamados (visibilidade/
+commit inicial, de novo sobre os módulos de chamados (visibilidade/
 máquina de estados), reservas, documentos e avisos (commits `71415f7`
-a `c40b4e8`) — nenhum CRÍTICO encontrado em nenhuma das rodadas. Itens
-abertos, não ignorar silenciosamente:
+a `c40b4e8`), e de novo sobre o módulo de dashboards (Prompt 8) — nenhum
+CRÍTICO encontrado em nenhuma das rodadas. Itens abertos, não ignorar
+silenciosamente:
 - **AVISO** (corrigido): `ChamadosService.atualizar` validava
   `responsavelId` só checando se o `Usuario` existia, sem checar tenant
   — `usuario` não tem `administradoraId`/`condominioId`/`unidadeId`
@@ -108,6 +109,36 @@ abertos, não ignorar silenciosamente:
   `vinculoAmploService.possui(usuario, condominioId, tenantPrisma)`. Sem
   mudança de comportamento: `chamados.integration-spec.ts` e
   `documentos.integration-spec.ts` continuaram passando sem alteração.
+- **AVISO** (corrigido, Prompt 8): `tenant-prisma.ts` não tinha NENHUM
+  filtro físico para Chamado/Documento/Aviso/AreaComum/Unidade/
+  ServicoPeriodico (`CONDOMINIO_ID_MODELS`) nem para Cobranca/Reserva/
+  ConversaBot (`UNIDADE_ID_MODELS`) em rotas `/administradoras/:id/*`
+  (escopo resolvido só até `administradoraId`, sem `condominioId`) — só o
+  filtro manual no service protegia. Não mordeu ninguém até agora porque
+  nenhuma rota anterior a `GET /administradoras/:id/dashboard` consultava
+  esses modelos nesse nível de escopo (a única rota `/administradoras/:id/*`
+  existente, `GET /administradoras/:id`, só toca o próprio model
+  `Administradora`, que já era filtrado). Corrigido com um novo branch em
+  `buildScopedPrismaClient` que filtra esses modelos por
+  `condominio.administradoraId` (ou `unidade.condominio.administradoraId`
+  pra Cobranca/Reserva/ConversaBot) quando o escopo é só `administradoraId`
+  — mesmo espírito do `else if (scope.condominioId)` já existente pra
+  escopo condominioId-only.
+- **SUGESTÃO** (corrigida, Prompt 8): `DashboardService.administradora` usava
+  `this.prisma.chamado.groupBy` (client cru) em vez do `tenantPrisma`
+  resolvido por request — funcionava porque dependia só do `condominioIds`
+  já filtrado pela raw query anterior, mas deixava esse `groupBy` sem a 2ª
+  camada de defesa que o resto do service tem. Trocado pra `tenantPrisma`
+  (controller passa via `@CurrentTenantPrisma()`), aproveitando o branch
+  `administradoraId`-only que acabou de ser corrigido em `tenant-prisma.ts`
+  (item acima) — antes dessa correção, essa troca não teria efeito nenhum.
+- **SUGESTÃO** (aberta): a raw query de `DashboardService.administradora`
+  (`$queryRaw`) e o `groupBy` adjacente nunca foram cobertos pelo teste que
+  itera o DMMF sugerido abaixo, nem por nenhum teste automatizado que falhe
+  se alguém remover o `WHERE cond."administradoraId" = ...` — a cobertura
+  hoje é só revisão manual + o teste de isolamento manual em
+  `dashboard.integration-spec.ts` (que passaria a falhar se o filtro fosse
+  removido, mas não de forma óbvia/dirigida ao motivo).
 
 ## Decisões de escopo do módulo chamados (Prompt 4, revisado no Prompt B)
 - `POST /condominios/:id/chamados`: só SINDICO e CONDOMINO abrem chamado
@@ -268,6 +299,69 @@ abertos, não ignorar silenciosamente:
   destinatários; sem APP, nenhuma `AvisoLeitura` é criada (o aviso nunca
   aparece em `GET /usuarios/me/avisos`, mesmo tendo sido enviado por
   EMAIL/WHATSAPP).
+
+## Decisões de escopo do módulo dashboard (Prompt 8)
+- Novo model `ServicoPeriodico` (`condominioId`, `nome`, `proximoVencimento`)
+  não existia em nenhum prompt anterior — criado minimamente só pra
+  sustentar "próximos vencimentos de serviços periódicos" no dashboard por
+  condomínio. Mesmo padrão já usado pra `AreaComum` no Prompt 5: sem
+  endpoint de cadastro neste prompt, criado só via seed/script/teste; se um
+  endpoint de cadastro for criado depois, validar o shape explicitamente.
+  Entra em `CONDOMINIO_ID_MODELS` de `tenant-prisma.ts` (tem `condominioId`
+  direto, igual a `Documento`/`Aviso`/`AreaComum`).
+- "Chamados abertos" (tanto o `chamadosPorStatus` do dashboard por
+  condomínio quanto o `totalChamadosAbertos`/`condominiosComMaisChamados
+  Pendentes` do dashboard agregado) é definido como status ≠ `RESOLVIDO`
+  (`PENDENTE_TRIAGEM` + `ABERTO` + `EM_ANDAMENTO`) — o prompt não
+  especifica isso explicitamente, mas chamado resolvido não é "aberto" em
+  nenhuma leitura razoável da palavra. `chamadosPorStatus` retorna só essas
+  3 chaves (nunca `RESOLVIDO`).
+- `GET /condominios/:condominioId/dashboard`: ADMINISTRADORA e SINDICO,
+  igual ao padrão de `GET /condominios/:id/financeiro/resumo` — CONDOMINO
+  não vê totais financeiros do condomínio inteiro.
+- `GET /administradoras/:administradoraId/dashboard`: só ADMINISTRADORA —
+  nem SINDICO de um dos condomínios da carteira acessa essa visão agregada
+  (ele só gerencia o(s) próprio(s) condomínio(s), não a carteira inteira).
+- Dashboard agregado otimizado pra 2 queries totais, sempre, independente
+  do número de condomínios da administradora (ver teste dedicado de
+  contagem de queries via `prisma.onQuery`, comparando 3 vs. 100
+  condomínios e exigindo igualdade):
+  1. Uma raw query (`$queryRaw`, injetada via `Prisma.sql` template,
+     parâmetros sempre bindados — nunca interpolação de string) que faz
+     `LEFT JOIN Condominio → Unidade → Cobranca` e soma, com `CASE WHEN`
+     condicional no banco, recebido-no-mês / a-receber-no-mês / em-atraso
+     por condomínio — só assim dá pra obter um total por condomínio sem um
+     `groupBy` do Prisma (que não alcança `Cobranca.unidade.condominioId`,
+     uma relação indireta) nem buscar todas as cobranças da carteira e
+     somar em JS (que escalaria com o volume de cobranças, não só de
+     condomínios, mas ainda assim violaria "agregação no nível do banco").
+     **Atenção, débito de isolamento**: `$queryRaw`/`$executeRaw` NÃO
+     passam pelo filtro físico de `tenant-prisma.ts` (a extensão do Prisma
+     Client só intercepta operações de modelo, não SQL cru) — por isso o
+     `WHERE cond."administradoraId" = ${administradoraId}` é manual e
+     **obrigatório** na query, e usa `this.prisma` (client cru), nunca
+     `tenantPrisma`, pra não sugerir uma proteção que não existe ali.
+  2. Um `groupBy` do Prisma em `Chamado` por `condominioId`, filtrado pelos
+     `condominioId`s que já saíram da query acima (nenhuma query extra pra
+     descobri-los) — cobre `totalChamadosAbertos` e
+     `condominiosComMaisChamadosPendentes` de uma vez.
+  - Esse "dashboard agregado sem N+1" foi a primeira rota a precisar de
+    escopo `administradoraId`-only tocando esses modelos — ver o item de
+    débito técnico corrigido em `tenant-prisma.ts` acima.
+- `taxaArrecadacao` é `null` (não `0`) quando não há nada a receber no mês
+  pra aquele condomínio — `0%` de arrecadação e "não há dado" são
+  afirmações diferentes. No `sort` do ranking, `null` é tratado como o
+  pior valor (vai pro fim da lista).
+- `rankingArrecadacao`/`rankingInadimplencia` retornam TODOS os condomínios
+  da carteira, ordenados; `condominiosComMaisChamadosPendentes` é truncado
+  no top 5 — o primeiro par é uma classificação completa ("ranking"),
+  o segundo é deliberadamente um destaque ("lista... com mais").
+- `PrismaService` ganhou `log: [{ emit: 'event', level: 'query' }]` e um
+  método `onQuery(callback)` (encapsula um cast pontual — `extends
+  PrismaClient` sem o generic `<'query'>` perde a tipagem de `$on`, e
+  tentar `extends PrismaClient<'query'>` resolve o type argument contra a
+  sobrecarga errada do client gerado). Sem listener attached, não tem
+  custo nenhum em produção; usado só pelo teste de contagem de queries.
 
 ## Pendência para o Prompt 10 (seed)
 `Unidade` ganhou os campos opcionais `responsavelNome`, `responsavelEmail`

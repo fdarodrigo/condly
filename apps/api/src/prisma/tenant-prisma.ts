@@ -6,7 +6,14 @@ export type TenantScope = {
   unidadeId?: string;
 };
 
-const CONDOMINIO_ID_MODELS = ['unidade', 'chamado', 'documento', 'aviso', 'areaComum'] as const;
+const CONDOMINIO_ID_MODELS = [
+  'unidade',
+  'chamado',
+  'documento',
+  'aviso',
+  'areaComum',
+  'servicoPeriodico',
+] as const;
 const UNIDADE_ID_MODELS = ['cobranca', 'reserva', 'conversaBot'] as const;
 
 // Operações que aceitam `where` — nunca mexemos em create/createMany, que não têm essa chave.
@@ -52,6 +59,27 @@ export function buildScopedPrismaClient(prisma: PrismaService, scope: TenantScop
         ? { id: scope.condominioId }
         : { administradoraId: scope.administradoraId },
     );
+
+    if (!scope.condominioId) {
+      // Rota /administradoras/:id/* (ex: dashboard agregado) sem
+      // condominioId resolvido: sem este filtro, Chamado/Documento/Aviso/
+      // AreaComum/Unidade/ServicoPeriodico ficariam completamente
+      // descobertos pela 2ª camada — só o filtro manual do service os
+      // protegeria, igual ao gap já corrigido pra Cobranca/Reserva/
+      // ConversaBot em escopo condominioId-only (`else if` abaixo).
+      for (const model of CONDOMINIO_ID_MODELS) {
+        query[model] = mergeWhereFilter({
+          condominio: { administradoraId: scope.administradoraId },
+        });
+      }
+      // Cobranca/Reserva/ConversaBot não têm relação direta com Condominio
+      // (só com Unidade), então o filtro precisa de mais um salto na relação.
+      for (const model of UNIDADE_ID_MODELS) {
+        query[model] = mergeWhereFilter({
+          unidade: { condominio: { administradoraId: scope.administradoraId } },
+        });
+      }
+    }
   }
 
   if (scope.condominioId) {

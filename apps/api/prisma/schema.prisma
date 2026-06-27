@@ -64,13 +64,14 @@ model Condominio {
   cnpj              String  @unique
   subcontaGatewayId String?
 
-  administradora Administradora   @relation(fields: [administradoraId], references: [id])
-  unidades       Unidade[]
-  vinculos       VinculoUsuario[]
-  chamados       Chamado[]
-  documentos     Documento[]
-  avisos         Aviso[]
-  areasComuns    AreaComum[]
+  administradora     Administradora     @relation(fields: [administradoraId], references: [id])
+  unidades           Unidade[]
+  vinculos           VinculoUsuario[]
+  chamados           Chamado[]
+  documentos         Documento[]
+  avisos             Aviso[]
+  areasComuns        AreaComum[]
+  servicosPeriodicos ServicoPeriodico[]
 
   @@index([administradoraId])
 }
@@ -245,6 +246,24 @@ model Reserva {
 
   @@index([areaComumId])
   @@index([unidadeId])
+}
+
+// Contrato de manutenção recorrente do condomínio (elevador, dedetização,
+// extintores, gerador etc.) — não existia model nenhum pra isso até aqui;
+// criado minimamente só pra sustentar "próximos vencimentos" no dashboard
+// (Prompt 8). Sem endpoint de cadastro neste prompt (mesmo padrão já usado
+// pra AreaComum no Prompt 5: criado só via seed/script); se um endpoint de
+// cadastro for criado depois, validar esse shape explicitamente.
+model ServicoPeriodico {
+  id                String   @id @default(cuid())
+  condominioId      String
+  nome              String
+  proximoVencimento DateTime @db.Date
+  criadoEm          DateTime @default(now())
+
+  condominio Condominio @relation(fields: [condominioId], references: [id])
+
+  @@index([condominioId])
 }
 
 model ConversaBot {

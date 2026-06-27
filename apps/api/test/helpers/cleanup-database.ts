@@ -15,6 +15,7 @@ export async function limparBanco(prisma: PrismaService): Promise<void> {
   await prisma.chamado.deleteMany();
   await prisma.documento.deleteMany();
   await prisma.aviso.deleteMany();
+  await prisma.servicoPeriodico.deleteMany();
   await prisma.areaComum.deleteMany();
   await prisma.unidade.deleteMany();
   await prisma.condominio.deleteMany();
