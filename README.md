@@ -22,8 +22,17 @@ O monorepo usa npm workspaces — um único `npm install` na raiz resolve as
 dependências dos dois apps:
 
 ```bash
-npm install
+npm install --legacy-peer-deps
 ```
+
+`--legacy-peer-deps` é necessário: há um conflito real de peer dependency
+entre as ferramentas Angular devkit trazidas por `@nestjs/schematics`/
+`@nestjs/cli` e a versão de `rxjs` exigida por outras dependências — sem a
+flag, o `npm install` padrão (resolução estrita de peer deps) falha. Se
+precisar adicionar uma dependência nova em qualquer um dos apps, use a
+mesma flag (`npm install <pacote> --legacy-peer-deps`), senão o pacote
+pode ficar sem alguma peer dependency instalada (foi o caso de
+`@testing-library/dom` ao configurar o Vitest em `apps/web`).
 
 ## Banco de dados (PostgreSQL via Docker)
 

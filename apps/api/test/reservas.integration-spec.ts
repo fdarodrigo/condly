@@ -301,4 +301,24 @@ describe('Módulo reservas', () => {
       expect(inalterada?.status).toBe('CONFIRMADA');
     });
   });
+
+  describe('GET /condominios/:condominioId/areas-comuns', () => {
+    it('lista as áreas comuns do condomínio, ordenadas por nome', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/condominios/${fixtures.condominio1.id}/areas-comuns`)
+        .set('Authorization', `Bearer ${tokenCondomino}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([{ id: areaComum1.id, nome: 'Salão de festas' }]);
+    });
+
+    it('nunca lista a área comum de outro condomínio', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/condominios/${fixtures.condominio1.id}/areas-comuns`)
+        .set('Authorization', `Bearer ${tokenSindico}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.map((area: { id: string }) => area.id)).not.toContain(areaComum2.id);
+    });
+  });
 });

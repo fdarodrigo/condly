@@ -85,6 +85,21 @@ function calcularLivres(
 
 @Injectable()
 export class ReservasService {
+  /**
+   * Listagem simples (id + nome) pra sustentar o seletor de área comum da
+   * tela de reservas (Prompt 10.5) — não existia nenhum endpoint de leitura
+   * de `AreaComum` até aqui (criada só via seed/script, ver CLAUDE.md).
+   * Mesmas roles de `disponibilidade`/`criar`: qualquer papel do condomínio
+   * pode ver quais áreas existem pra escolher uma.
+   */
+  async listarAreasComuns(condominioId: string, tenantPrisma: TenantPrismaClient) {
+    return tenantPrisma.areaComum.findMany({
+      where: { condominioId },
+      select: { id: true, nome: true },
+      orderBy: { nome: 'asc' },
+    });
+  }
+
   async disponibilidade(areaComumId: string, data: string, tenantPrisma: TenantPrismaClient) {
     const areaComum = await tenantPrisma.areaComum.findUnique({ where: { id: areaComumId } });
     if (!areaComum) {

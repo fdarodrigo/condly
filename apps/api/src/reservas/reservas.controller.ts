@@ -27,6 +27,15 @@ import { DisponibilidadeQueryDto } from './dto/disponibilidade-query.dto';
 export class ReservasController {
   constructor(private readonly reservasService: ReservasService) {}
 
+  @Get('condominios/:condominioId/areas-comuns')
+  @Roles('ADMINISTRADORA', 'SINDICO', 'CONDOMINO')
+  listarAreasComuns(
+    @Param('condominioId') condominioId: string,
+    @CurrentTenantPrisma() prisma: TenantPrismaClient,
+  ) {
+    return this.reservasService.listarAreasComuns(condominioId, prisma);
+  }
+
   @Get('areas-comuns/:areaComumId/disponibilidade')
   @Roles('ADMINISTRADORA', 'SINDICO', 'CONDOMINO')
   disponibilidade(

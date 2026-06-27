@@ -20,7 +20,8 @@ navegação, não a fonte da verdade.
 ## Comandos
 - `docker compose up -d` — Postgres local (condly_dev + condly_test), porta 5433
 - `npm run dev` (em cada app) — ambiente local
-- `npm run test:unit` (apps/api) — Jest sem tocar banco
+- `npm run test:unit` — Jest sem tocar banco (apps/api) ou Vitest +
+  Testing Library (apps/web)
 - `npm run test:integration` (apps/api) — aplica migrations no banco de
   teste (`TEST_DATABASE_URL`) e roda os specs `*.integration-spec.ts`
 - `npm run lint` / `npx tsc --noEmit` — lint e checagem de tipos
@@ -60,15 +61,30 @@ genérico (utilitários, helpers sem relação direta com o domínio) segue
 a convenção padrão em inglês do ecossistema Node/TypeScript. Não
 misture os dois dentro da mesma entidade.
 
-## Débito técnico conhecido (revisão de segurança pós-Prompt 3, reauditado pós-Prompt 4, pós-Prompt 7, pós-Prompt 8 e pós-Prompt 9)
+## Débito técnico conhecido (revisão de segurança pós-Prompt 3, reauditado pós-Prompt 4, pós-Prompt 7, pós-Prompt 8, pós-Prompt 9 e pós-Prompt 10.5)
 Review do tenant-security-reviewer sobre schema + auth/RBAC + financeiro.
 Reauditado retroativamente sobre toda a base (Prompts 1-4) após o
 commit inicial, de novo sobre os módulos de chamados (visibilidade/
 máquina de estados), reservas, documentos e avisos (commits `71415f7`
-a `c40b4e8`), de novo sobre o módulo de dashboards (Prompt 8), e de novo
+a `c40b4e8`), de novo sobre o módulo de dashboards (Prompt 8), de novo
 sobre o módulo de bot do WhatsApp (Prompt 9, com foco extra na regra de
-identidade exclusiva por `telefoneWhatsapp`) — nenhum CRÍTICO encontrado
-em nenhuma das rodadas. Itens abertos, não ignorar silenciosamente:
+identidade exclusiva por `telefoneWhatsapp`), e de novo sobre os dois
+endpoints novos que sustentam o frontend (`GET /unidades/me/saldo` e
+`GET /condominios/:id/areas-comuns`, Prompt 10.5) — nenhum CRÍTICO
+encontrado em nenhuma das rodadas. Itens abertos, não ignorar
+silenciosamente:
+- **SUGESTÃO** (aberta, Prompt 10.5): `UnidadesService.meuSaldo` usa
+  `findFirst` em `vinculoUsuario` sem `orderBy` explícito pra escolher
+  qual unidade usar quando o usuário tem mais de um vínculo com
+  `unidadeId` — mesma limitação já aceita e documentada para
+  `BotService.resolverIdentidade` (não é falha de isolamento, a unidade
+  retornada é sempre de um vínculo real do próprio usuário, só não há
+  critério de desambiguação determinístico entre vínculos legítimos).
+- **SUGESTÃO** (aberta, Prompt 10.5): `unidades.integration-spec.ts` só
+  cobre o 404 de "usuário sem nenhum vínculo com unidade" (SINDICO puro);
+  não há teste explícito pra "vínculo existe mas não é CONDOMINO" como
+  caso distinto (comportamento é o mesmo, a rota não filtra por papel de
+  propósito — só falta o teste nomeado pra esse caso específico).
 - **AVISO** (corrigido): `ChamadosService.atualizar` validava
   `responsavelId` só checando se o `Usuario` existia, sem checar tenant
   — `usuario` não tem `administradoraId`/`condominioId`/`unidadeId`
@@ -513,6 +529,134 @@ em nenhuma das rodadas. Itens abertos, não ignorar silenciosamente:
   padrão de nome. Reforçar essa trava (ex: variável explícita) se um
   ambiente real com dados de tenants existir antes desse padrão de nome
   ser revisado.
+
+## Decisões de escopo do frontend e infra de dev (Prompt 10.5)
+- `apps/web` saiu do scaffold puro do Prompt 0 pra ganhar a casca da
+  aplicação e as 4 telas mínimas pra sustentar os fluxos E2E do Prompt
+  11: `/login`, `/dashboard` (SINDICO/ADMINISTRADORA), `/minha-unidade`
+  e `/reservas` (CONDOMINO). Identidade visual fixa em claro (fundo
+  branco/cinza claro, wordmark "Cond" + "ly" em verde `#0F6E56`) — nunca
+  usa a variante `dark:` do tema do shadcn (que já vinha configurado no
+  scaffold); nenhuma página/componente novo deste prompt depende de
+  `.dark` no `<html>`, então o produto continua sem modo escuro por
+  decisão, não por omissão.
+- `src/lib/api-client.ts` é o único ponto que monta requisições HTTP pro
+  backend: injeta `Authorization: Bearer <token>` (lido de
+  `localStorage` via `src/lib/auth.ts`) e redireciona pra `/login` em
+  qualquer 401 — **exceto** quando a chamada passa
+  `ignorarRedirecionamento401: true`, usado só por `POST /auth/login`
+  (que também responde 401 pra credencial inválida, e nesse caso não é
+  "sessão expirada", é erro de formulário; sem essa flag o
+  `LoginForm` nunca veria a mensagem de erro real, só seria
+  redirecionado de volta pra própria tela de login).
+- `src/lib/auth.ts` decodifica o JWT só lendo o payload (base64url, sem
+  validar assinatura) pra decidir UX — pra onde redirecionar depois do
+  login, o que esconder/mostrar por papel. Isso nunca é tratado como
+  fonte de autorização real: toda chamada de API que importa passa pelo
+  RBAC do backend de qualquer forma, e um token adulterado só engana a
+  UI (esconde/mostra menu errado), nunca destrava uma chamada de API que
+  o backend não autorizaria de verdade.
+- Proteção de rota em duas camadas, ambas client-side e ambas só UX (ver
+  comentário no código de cada uma): `app/(app)/layout.tsx` redireciona
+  pra `/login` se não há accessToken nenhum; `RequireRole` (usado dentro
+  de cada página, não no layout compartilhado, porque cada página exige
+  um papel diferente) redireciona pra própria home do papel logado se o
+  usuário tentar acessar a página de outro papel (ex: condômino abrindo
+  `/dashboard` direto pela URL).
+- A barra lateral lista Dashboard/Reservas/Documentos/Avisos pra
+  qualquer papel, sem filtrar por permissão — `RequireRole` já cobre a
+  parte de "não deixar entrar"; filtrar os itens do menu também seria
+  redundante. Documentos e Avisos ainda não têm página (chegam no Prompt
+  10.6); o link já existe, apontando pra uma rota inexistente (404 até
+  lá) — comportamento esperado, não um bug.
+- `/dashboard` consome **três** endpoints, não só
+  `GET /condominios/:id/dashboard` (o nome citado no prompt original):
+  `GET /condominios/:id/financeiro/resumo` pros três números pedidos
+  literalmente ("total a receber, total recebido, lista de
+  inadimplentes" — exatamente os três campos que esse endpoint já
+  retorna) e `GET /condominios/:id/chamados` pra lista de chamados com
+  status. O endpoint `.../dashboard` em si (Prompt 8) não tem nenhum dos
+  dois — só agregados (`totalArrecadadoNoMes`/`totalEmAtraso`) e
+  contagem de chamados por status, não a lista propriamente. Decisão
+  deliberada de composição no frontend em vez de alterar um endpoint já
+  testado (`dashboard.integration-spec.ts`) pra caber no nome citado.
+- O formulário de abrir chamado em `/dashboard` só aparece pra SINDICO
+  (`temPapel(vinculos, ['SINDICO'])`), nunca pra ADMINISTRADORA — mesmo
+  os dois acessando a mesma página — porque `POST
+  /condominios/:id/chamados` já é restrito a SINDICO/CONDOMINO desde o
+  Prompt 4 (ADMINISTRADORA não abre chamado). Mostrar o formulário pra
+  ADMINISTRADORA daria 403 ao submeter; melhor nem mostrar.
+- `/dashboard` resolve o `condominioId` a partir do primeiro vínculo do
+  JWT que tiver `condominioId` (cobre SINDICO, o único papel exercitado
+  pelo E2E do Prompt 11 nesta tela). Não existe endpoint de "listar
+  condomínios da administradora" pra resolver o caso de uma
+  ADMINISTRADORA-de-carteira sem vínculo de condomínio direto — fora de
+  escopo deste prompt; a tela degrada pra uma mensagem informativa em
+  vez de quebrar nesse caso.
+- Dois endpoints novos no backend, faltantes antes deste prompt (mesmo
+  espírito do `GET /unidades/me/saldo` pedido explicitamente):
+  - `GET /unidades/me/saldo` (`UnidadesController`/`UnidadesService`) —
+    rota "minha conta" (sem `@Roles`, mesmo padrão de
+    `GET /usuarios/me/avisos`), precisa vir ANTES de `GET ':unidadeId'`
+    no controller pra não ser capturada como path param literal `"me"`.
+    Resolve a unidade exclusivamente a partir do `usuarioId` do JWT →
+    `VinculoUsuario` com `unidadeId` não nulo (sem filtrar por papel,
+    mesmo padrão de `BotService.resolverIdentidade`) → `Cobranca`
+    `PENDENTE`/`ATRASADO` de maior `vencimento`.
+  - `GET /condominios/:condominioId/areas-comuns` (`ReservasController`)
+    — não existia nenhum endpoint de leitura de `AreaComum` até aqui
+    (criada só via seed/script); precisa existir pra `/reservas` ter algo
+    pra colocar no seletor sem hardcodar um id de área comum (que muda a
+    cada reseed). Mesmas roles de `disponibilidade`/`criar`.
+- `/reservas` usa um `<select>` nativo pro seletor de área comum, não o
+  componente `Select` do shadcn (baseado em `@base-ui/react/select`,
+  popover customizado) — decisão deliberada pensando no Prompt 11: um
+  `<select>` nativo é trivial de dirigir via Playwright
+  (`selectOption()`), enquanto um popover customizado exigiria localizar
+  e interagir com a lista flutuante. O componente `select.tsx` gerado
+  pelo `shadcn add` foi removido por não ter nenhum uso (ver decisão
+  acima — não tem nenhum lugar nesta tela que precise dele).
+- Data padrão de `/reservas` é "amanhã", não "hoje" — a API rejeita
+  reserva com `inicio` no passado, mas `ReservasService.disponibilidade`
+  calcula `livres` só descontando reservas já confirmadas, **nunca**
+  descontando o horário atual do dia (um slot de hoje às 08h aparece
+  como "livre" mesmo às 15h). "Amanhã" evita esse caso de borda sem
+  precisar mexer no endpoint.
+- Depois de confirmar uma reserva, a tela refaz o `GET disponibilidade`
+  e mostra o mesmo horário agora em "ocupados" (rotulado "Reservado") —
+  não existe endpoint de "minhas reservas", então "ver a reserva
+  aparecer no calendário" (Prompt 11) é literalmente isso: o mesmo
+  endpoint de disponibilidade, re-consultado, já reflete o novo estado.
+- **Infra de dev corrigida, bloqueava `npm run dev` de verdade** (achado
+  só agora porque nenhum prompt anterior precisou subir o servidor de
+  desenvolvimento de fato, só via `Test.createTestingModule()` nos
+  testes):
+  1. Nesta monorepo com npm workspaces, `@nestjs/core` fica hoisted pra
+     `node_modules` da raiz, mas `@nestjs/platform-express` permanece só
+     em `apps/api/node_modules` (decisão do resolvedor do npm, não muda
+     mesmo com reinstall limpo) — o auto-detect de adapter HTTP do
+     `NestFactory.create()` faz um require dinâmico de
+     `@nestjs/platform-express` a partir de onde `@nestjs/core` está, e
+     nunca encontra. Corrigido passando um `ExpressAdapter` explícito em
+     `main.ts` (`NestFactory.create(AppModule, new ExpressAdapter(),
+     ...)`), que resolve o pacote a partir do próprio `main.ts` (em
+     `apps/api/src`), onde ele está garantido.
+  2. `main.ts` não carregava `.env` nenhum (`ConfigModule.forRoot()` só
+     tem efeito já dentro do ciclo de instanciação do Nest — tarde
+     demais pra `AuthModule`, que chama `JwtModule.register({ secret:
+     process.env.JWT_SECRET })` de forma síncrona/eager na avaliação do
+     decorator `@Module()`, durante o próprio `require()` da árvore de
+     módulos). Sem `JWT_SECRET`, login funcionava nos testes (que
+     carregam `.env` por fora, via `scripts/test-integration.js`) mas
+     falhava com `secretOrPrivateKey must have a value` em
+     `npm run dev`. Corrigido com `import 'dotenv/config';` como
+     primeiríssima linha de `main.ts` — mesmo padrão já usado em
+     `scripts/test-integration.js` e `prisma/seed.ts`.
+  - Ambos validados rodando os dois servidores de verdade (`npm run dev`
+    em `apps/api` e `apps/web`) e dirigindo os dois fluxos principais
+    (síndico→dashboard→chamado, condômino→saldo→reserva) num navegador
+    real — capturas de tela conferidas manualmente, não só os testes
+    automatizados.
 
 ## Definição de "pronto"
 Uma tarefa só está concluída quando: os testes relevantes passam,
