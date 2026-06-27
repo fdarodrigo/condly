@@ -81,6 +81,7 @@ export class FinanceiroService {
         vencimento: new Date(dto.vencimento),
         status: 'PENDENTE',
         idExternoGateway: resultadoGateway.idExternoGateway,
+        linkPagamento: resultadoGateway.linkPagamento,
       },
     });
   }

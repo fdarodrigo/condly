@@ -53,8 +53,16 @@ export class AsaasHttpClient implements AsaasClient {
       throw new Error(`Falha ao criar cobrança no Asaas (HTTP ${response.status}).`);
     }
 
-    const pagamento = (await response.json()) as { id: string; status: string };
-    return { idExternoGateway: pagamento.id, status: pagamento.status };
+    const pagamento = (await response.json()) as {
+      id: string;
+      status: string;
+      invoiceUrl?: string;
+    };
+    return {
+      idExternoGateway: pagamento.id,
+      status: pagamento.status,
+      linkPagamento: pagamento.invoiceUrl ?? null,
+    };
   }
 
   private async obterOuCriarCliente(

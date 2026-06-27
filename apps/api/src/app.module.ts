@@ -15,6 +15,7 @@ import { ReservasModule } from './reservas/reservas.module';
 import { DocumentosModule } from './documentos/documentos.module';
 import { AvisosModule } from './avisos/avisos.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { BotModule } from './bot/bot.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     DocumentosModule,
     AvisosModule,
     DashboardModule,
+    BotModule,
   ],
   controllers: [AppController],
   providers: [AppService],

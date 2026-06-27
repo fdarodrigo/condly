@@ -55,14 +55,15 @@ genérico (utilitários, helpers sem relação direta com o domínio) segue
 a convenção padrão em inglês do ecossistema Node/TypeScript. Não
 misture os dois dentro da mesma entidade.
 
-## Débito técnico conhecido (revisão de segurança pós-Prompt 3, reauditado pós-Prompt 4, pós-Prompt 7 e pós-Prompt 8)
+## Débito técnico conhecido (revisão de segurança pós-Prompt 3, reauditado pós-Prompt 4, pós-Prompt 7, pós-Prompt 8 e pós-Prompt 9)
 Review do tenant-security-reviewer sobre schema + auth/RBAC + financeiro.
 Reauditado retroativamente sobre toda a base (Prompts 1-4) após o
 commit inicial, de novo sobre os módulos de chamados (visibilidade/
 máquina de estados), reservas, documentos e avisos (commits `71415f7`
-a `c40b4e8`), e de novo sobre o módulo de dashboards (Prompt 8) — nenhum
-CRÍTICO encontrado em nenhuma das rodadas. Itens abertos, não ignorar
-silenciosamente:
+a `c40b4e8`), de novo sobre o módulo de dashboards (Prompt 8), e de novo
+sobre o módulo de bot do WhatsApp (Prompt 9, com foco extra na regra de
+identidade exclusiva por `telefoneWhatsapp`) — nenhum CRÍTICO encontrado
+em nenhuma das rodadas. Itens abertos, não ignorar silenciosamente:
 - **AVISO** (corrigido): `ChamadosService.atualizar` validava
   `responsavelId` só checando se o `Usuario` existia, sem checar tenant
   — `usuario` não tem `administradoraId`/`condominioId`/`unidadeId`
@@ -132,6 +133,13 @@ silenciosamente:
   (controller passa via `@CurrentTenantPrisma()`), aproveitando o branch
   `administradoraId`-only que acabou de ser corrigido em `tenant-prisma.ts`
   (item acima) — antes dessa correção, essa troca não teria efeito nenhum.
+- **SUGESTÃO** (aberta, Prompt 9): `BotService` não loga (nem deveria logar
+  o texto da mensagem) tentativas de mensagem vindas de um
+  `telefoneWhatsapp` sem nenhum `Usuario`/`VinculoUsuario` vinculado —
+  dificulta detectar enumeração/spam nessa superfície não autenticada.
+  Mesmo espírito das duas sugestões de logging já abertas acima (webhook
+  do Asaas, cancelamento de reserva): logar só o telefone (nunca o
+  conteúdo da mensagem) seria suficiente.
 - **SUGESTÃO** (aberta): a raw query de `DashboardService.administradora`
   (`$queryRaw`) e o `groupBy` adjacente nunca foram cobertos pelo teste que
   itera o DMMF sugerido abaixo, nem por nenhum teste automatizado que falhe
@@ -289,11 +297,11 @@ silenciosamente:
   — mas o endereço de envio em si (`RESEND_FROM_EMAIL`) é fixo, porque é o
   único domínio verificado na conta Resend; a Administradora não tem
   domínio próprio cadastrado lá.
-- Canal WHATSAPP só chama `WhatsappClient.enviarAvisoWhatsapp(aviso)` —
-  stub deliberado (`WhatsappStubClient`) que não faz nada e nunca lança
-  erro, seguindo o mesmo padrão de DI por interface dos outros clients
-  externos (Asaas, R2). Implementação real (Meta WhatsApp Cloud API) entra
-  no Prompt 9, só troca o provider em `AvisosModule`.
+- Canal WHATSAPP só chama `WhatsappClient.enviarAvisoWhatsapp(aviso)` — no
+  Prompt 7 era um stub deliberado (`WhatsappStubClient`) que não fazia nada
+  e nunca lançava erro. Desde o Prompt 9, o provider real
+  (`WhatsappCloudApiAvisoClient`) está em produção e o stub foi removido —
+  ver decisões do módulo bot abaixo.
 - Cada canal selecionado em `canais` dispara seu efeito de forma
   independente: sem EMAIL, nenhum e-mail é enviado mesmo que haja
   destinatários; sem APP, nenhuma `AvisoLeitura` é criada (o aviso nunca
@@ -362,6 +370,89 @@ silenciosamente:
   tentar `extends PrismaClient<'query'>` resolve o type argument contra a
   sobrecarga errada do client gerado). Sem listener attached, não tem
   custo nenhum em produção; usado só pelo teste de contagem de queries.
+
+## Decisões de escopo do módulo bot (Prompt 9)
+- **Regra de identidade inegociável**: a autoridade de quem está
+  conversando vem EXCLUSIVAMENTE do `telefoneWhatsapp` da mensagem
+  entrante, resolvido contra `Usuario` → `VinculoUsuario` (com
+  `unidadeId` não nulo) → `Unidade`, em `BotService.resolverIdentidade` —
+  nunca de qualquer afirmação no texto da mensagem (`reconhecerIntencao`
+  jamais lê número de unidade ou papel do texto; isso é estrutural, não
+  só uma heurística). Defesa em duas camadas: (1) `reconhecerIntencao`
+  (`bot/intencoes/reconhecer-intencao.ts`) roda um denylist de frases
+  suspeitas de manipulação ("ignore as regras anteriores", "sou o
+  síndico", "me dê acesso total", "modo administrador"...) ANTES de
+  qualquer palavra-chave, forçando `DESCONHECIDA` mesmo que a mensagem
+  também contenha "saldo"/"reservar"/"chamado"; (2) mesmo que uma frase de
+  manipulação escape do denylist, nenhum handler de intenção em
+  `BotService` jamais extrai unidade/papel do `texto` — só do telefone.
+  Testes adversariais cobrindo isso em `reconhecer-intencao.spec.ts`
+  (unitário) e `bot.integration-spec.ts` (ponta a ponta, com `ConversaBot`
+  e resposta real do bot).
+- `POST /webhooks/whatsapp` e o `GET` de verificação seguem o padrão já
+  estabelecido pro webhook do Asaas (CLAUDE.md, "Outras regras de
+  domínio"): valida ANTES de processar qualquer payload, mesmo em teste.
+  Aqui a validação é HMAC-SHA256 (`X-Hub-Signature-256`, ver
+  `bot/whatsapp-signature.util.ts`) sobre o corpo CRU — exigiu habilitar
+  `rawBody: true` em `NestFactory.create` (`main.ts`) e nos testes de
+  integração (`moduleRef.createNestApplication({ rawBody: true })`),
+  porque o HMAC precisa dos bytes exatos recebidos, antes do
+  parse/transform do `ValidationPipe`. Essa superfície é a mais exposta do
+  sistema (não autenticada — qualquer telefone pode mandar mensagem), por
+  isso a checagem de assinatura é ainda mais inegociável que a do Asaas.
+- Cliente HTTP da Meta Cloud API (`whatsapp/whatsapp-cloud-api-*`) é
+  deliberadamente uma camada separada do `WhatsappClient` de Avisos
+  (`avisos/whatsapp/whatsapp-client.interface.ts`): `WhatsappCloudApiClient`
+  só sabe "enviar texto pra um número" (token de DI
+  `WHATSAPP_CLOUD_API_CLIENT`, real via `WhatsappCloudApiHttpClient`, fake
+  via `test/helpers/fake-whatsapp-cloud-api-client.ts`), e é reusado tanto
+  por `WhatsappCloudApiAvisoClient` (canal WHATSAPP de Aviso) quanto por
+  `BotService` — evita duplicar a chamada HTTP à Graph API em dois lugares
+  com o mesmo padrão de DI já usado pra Asaas/R2/Resend.
+- `Cobranca` ganhou `linkPagamento` (nullable) pra sustentar "envia o link
+  de 2ª via" do fluxo de saldo — capturado de `invoiceUrl` na resposta real
+  do Asaas na criação da cobrança (`AsaasClient.criarCobranca`), nunca
+  reconstruído a partir de um padrão de URL assumido. Cobranças criadas
+  antes desse campo existir ficam com `linkPagamento: null`; o bot
+  responde o saldo mesmo assim, só omitindo a linha da 2ª via.
+- "Cobrança pendente mais recente" (não existe `criadoEm` em `Cobranca`)
+  é interpretada como a cobrança com status `PENDENTE` ou `ATRASADO` de
+  maior `vencimento` (`ORDER BY vencimento DESC LIMIT 1`) — a mais
+  relevante pra "quanto devo" dado o ciclo de cobrança mensal.
+- "Reservar" e "chamado" só **iniciam o fluxo** (literal do prompt:
+  "inicia", não "completa") — o bot responde com uma orientação textual
+  (área comum encontrada/não encontrada, ou instrução pra abrir o chamado
+  pelo app), mas não cria `Reserva`/`Chamado` nem implementa máquina de
+  estados de conversa multi-turno; isso é escopo deliberadamente fora
+  deste prompt. Pra "reservar", o nome da área comum é extraído do texto
+  só pra fins de BUSCA em `AreaComum.nome` (`contains`, `insensitive`,
+  preservando acentos — diferente da normalização sem-acento usada pro
+  denylist de segurança, que tem outro propósito) dentro do
+  `condominioId` resolvido pelo telefone — nunca usado pra decidir
+  autorização.
+- `ConversaBot.unidadeId` passou a nullable (migração
+  `20260627152410_bot_whatsapp`) porque toda mensagem é registrada,
+  inclusive de telefone sem nenhum vínculo (`BotService` orienta o
+  cadastro pelo app nesse caso). Uma conversa por telefone é reaproveitada
+  entre mensagens (`ConversaBot.findFirst` por `telefoneWhatsapp`, mais
+  recente primeiro) em vez de criar uma linha nova a cada troca; se a
+  conversa começou sem vínculo e a identidade resolve depois,
+  `unidadeId` é religado — nunca o contrário (uma conversa já vinculada
+  nunca volta a ficar sem unidade). Continua fora de
+  `CONDOMINIO_ID_MODELS`/`UNIDADE_ID_MODELS` de `tenant-prisma.ts`: o
+  webhook não tem requisição autenticada/tenant resolvido por
+  `TenantScopeResolverService` (é `BotService` usando `PrismaService` cru,
+  mesmo padrão de `FinanceiroService.processarWebhookPagamento`), então
+  não haveria escopo nenhum pra injetar ali — o isolamento aqui vem
+  inteiramente da regra de identidade acima, não do filtro físico.
+- **Limitação conhecida, não corrigida**: se um `Usuario` tiver mais de um
+  `VinculoUsuario` com `unidadeId` (ex: dono de duas unidades),
+  `resolverIdentidade` usa o primeiro encontrado, sem critério de
+  desambiguação — não é uma falha de isolamento (a unidade usada é sempre
+  uma unidade real do próprio usuário daquele telefone), mas pode
+  responder pela unidade "errada" entre as duas legítimas. Fora de escopo
+  deste prompt; revisar se o produto passar a tratar multi-unidade por
+  telefone como caso comum.
 
 ## Pendência para o Prompt 10 (seed)
 `Unidade` ganhou os campos opcionais `responsavelNome`, `responsavelEmail`

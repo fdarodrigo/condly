@@ -140,6 +140,10 @@ model Cobranca {
   vencimento       DateTime       @db.Date
   status           StatusCobranca
   idExternoGateway String?
+  // Link hospedado pelo gateway (2ª via de boleto/PIX) — capturado da
+  // resposta do Asaas na criação, nunca reconstruído a partir de um padrão
+  // de URL assumido (ver AsaasClient). Usado pelo bot do WhatsApp (Prompt 9).
+  linkPagamento    String?
   pagoEm           DateTime?
 
   unidade Unidade @relation(fields: [unidadeId], references: [id])
@@ -266,14 +270,21 @@ model ServicoPeriodico {
   @@index([condominioId])
 }
 
+// unidadeId é opcional porque a conversa é registrada mesmo quando o
+// telefoneWhatsapp não está vinculado a nenhum Usuario/Unidade ainda
+// (auditoria de toda interação, inclusive tentativas de número não
+// cadastrado — ver BotService). Nunca é a fonte de autoridade pra decidir
+// o que o bot responde; é só o melhor vínculo conhecido pra fins de
+// histórico/auditoria.
 model ConversaBot {
   id               String   @id @default(cuid())
-  unidadeId        String
+  unidadeId        String?
   telefoneWhatsapp String
   mensagens        Json
   criadoEm         DateTime @default(now())
 
-  unidade Unidade @relation(fields: [unidadeId], references: [id])
+  unidade Unidade? @relation(fields: [unidadeId], references: [id])
 
   @@index([unidadeId])
+  @@index([telefoneWhatsapp])
 }

@@ -5,6 +5,7 @@ import { Aviso } from '../../generated/prisma/client';
 import { CriarAvisoDto } from './dto/criar-aviso.dto';
 import { EMAIL_CLIENT, EmailClient } from './email/email-client.interface';
 import { WHATSAPP_CLIENT, WhatsappClient } from './whatsapp/whatsapp-client.interface';
+import { resolverDestinatariosDoAviso } from './resolver-destinatarios-aviso';
 
 @Injectable()
 export class AvisosService {
@@ -48,35 +49,8 @@ export class AvisosService {
     return leituras.map((leitura) => leitura.aviso);
   }
 
-  /**
-   * Destinatários do escopo do aviso: síndico e condômino(s) — a
-   * Administradora normalmente é quem está criando o aviso, não um
-   * destinatário dele. Escopo "unidade específica" só notifica o(s)
-   * condômino(s) daquela unidade, nunca o síndico nem outras unidades do
-   * mesmo condomínio.
-   */
-  private async resolverDestinatarios(aviso: Aviso, tenantPrisma: TenantPrismaClient) {
-    const vinculos = aviso.unidadeId
-      ? await tenantPrisma.vinculoUsuario.findMany({
-          where: { papel: 'CONDOMINO', unidadeId: aviso.unidadeId },
-          include: { usuario: true },
-        })
-      : await tenantPrisma.vinculoUsuario.findMany({
-          where: {
-            OR: [
-              { papel: 'SINDICO', condominioId: aviso.condominioId },
-              { papel: 'CONDOMINO', unidade: { condominioId: aviso.condominioId } },
-            ],
-          },
-          include: { usuario: true },
-        });
-
-    const usuariosPorId = new Map(vinculos.map((vinculo) => [vinculo.usuario.id, vinculo.usuario]));
-    return Array.from(usuariosPorId.values());
-  }
-
   private async dispararEnvio(aviso: Aviso, tenantPrisma: TenantPrismaClient): Promise<void> {
-    const destinatarios = await this.resolverDestinatarios(aviso, tenantPrisma);
+    const destinatarios = await resolverDestinatariosDoAviso(aviso, tenantPrisma);
 
     if (aviso.canais.includes('APP')) {
       await tenantPrisma.avisoLeitura.createMany({

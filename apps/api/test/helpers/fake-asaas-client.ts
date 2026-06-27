@@ -15,6 +15,10 @@ export class FakeAsaasClient implements AsaasClient {
   async criarCobranca(input: CriarCobrancaAsaasInput): Promise<CriarCobrancaAsaasOutput> {
     this.chamadas.push(input);
     this.contador += 1;
-    return { idExternoGateway: `pay_fake_${this.contador}`, status: 'PENDING' };
+    return {
+      idExternoGateway: `pay_fake_${this.contador}`,
+      status: 'PENDING',
+      linkPagamento: `https://fake-asaas.example.com/i/pay_fake_${this.contador}`,
+    };
   }
 }

@@ -18,6 +18,10 @@ export interface CriarCobrancaAsaasInput {
 export interface CriarCobrancaAsaasOutput {
   idExternoGateway: string;
   status: string;
+  // Link hospedado pelo Asaas pra visualizar/pagar a cobrança (2ª via) —
+  // vem direto da resposta da API, nunca reconstruído a partir de um
+  // padrão de URL assumido.
+  linkPagamento: string | null;
 }
 
 export interface AsaasClient {
