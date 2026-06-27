@@ -1,12 +1,11 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { obterVinculos, temPapel } from '@/lib/auth';
 
-// Avisos e Documentos ainda não têm página própria (chegam no Prompt
-// 10.6) — o link já fica aqui de propósito, apontando pra uma rota que
-// ainda não existe (404 até lá).
 const ITENS_NAVEGACAO = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/reservas', label: 'Reservas' },
@@ -14,8 +13,19 @@ const ITENS_NAVEGACAO = [
   { href: '/avisos', label: 'Avisos' },
 ];
 
+// Visível só pra ADMINISTRADORA — nem SINDICO de um dos condomínios da
+// carteira acessa essa visão agregada (CLAUDE.md, decisões do dashboard).
+const ITEM_DASHBOARD_ADMINISTRADORA = { href: '/administradora/dashboard', label: 'Carteira' };
+
 export function Sidebar() {
   const pathname = usePathname();
+  const [ehAdministradora, setEhAdministradora] = useState(false);
+
+  useEffect(() => {
+    setEhAdministradora(temPapel(obterVinculos(), ['ADMINISTRADORA']));
+  }, []);
+
+  const itens = ehAdministradora ? [...ITENS_NAVEGACAO, ITEM_DASHBOARD_ADMINISTRADORA] : ITENS_NAVEGACAO;
 
   return (
     <nav
@@ -23,7 +33,7 @@ export function Sidebar() {
       className="hidden w-56 shrink-0 border-r border-border bg-white p-4 md:block"
     >
       <ul className="flex flex-col gap-1">
-        {ITENS_NAVEGACAO.map((item) => {
+        {itens.map((item) => {
           const ativo = pathname?.startsWith(item.href);
           return (
             <li key={item.href}>

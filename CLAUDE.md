@@ -61,18 +61,21 @@ genérico (utilitários, helpers sem relação direta com o domínio) segue
 a convenção padrão em inglês do ecossistema Node/TypeScript. Não
 misture os dois dentro da mesma entidade.
 
-## Débito técnico conhecido (revisão de segurança pós-Prompt 3, reauditado pós-Prompt 4, pós-Prompt 7, pós-Prompt 8, pós-Prompt 9 e pós-Prompt 10.5)
+## Débito técnico conhecido (revisão de segurança pós-Prompt 3, reauditado pós-Prompt 4, pós-Prompt 7, pós-Prompt 8, pós-Prompt 9, pós-Prompt 10.5 e pós-Prompt 10.6)
 Review do tenant-security-reviewer sobre schema + auth/RBAC + financeiro.
 Reauditado retroativamente sobre toda a base (Prompts 1-4) após o
 commit inicial, de novo sobre os módulos de chamados (visibilidade/
 máquina de estados), reservas, documentos e avisos (commits `71415f7`
 a `c40b4e8`), de novo sobre o módulo de dashboards (Prompt 8), de novo
 sobre o módulo de bot do WhatsApp (Prompt 9, com foco extra na regra de
-identidade exclusiva por `telefoneWhatsapp`), e de novo sobre os dois
+identidade exclusiva por `telefoneWhatsapp`), de novo sobre os dois
 endpoints novos que sustentam o frontend (`GET /unidades/me/saldo` e
-`GET /condominios/:id/areas-comuns`, Prompt 10.5) — nenhum CRÍTICO
-encontrado em nenhuma das rodadas. Itens abertos, não ignorar
-silenciosamente:
+`GET /condominios/:id/areas-comuns`, Prompt 10.5), e de novo sobre o
+único endpoint novo do Prompt 10.6 (`PATCH /avisos/:avisoId/marcar-lido`,
+com foco no raciocínio de que a busca pela chave composta
+`[avisoId, usuarioId]` substitui qualquer filtro físico de tenant) —
+nenhum CRÍTICO encontrado em nenhuma das rodadas. Itens abertos, não
+ignorar silenciosamente:
 - **SUGESTÃO** (aberta, Prompt 10.5): `UnidadesService.meuSaldo` usa
   `findFirst` em `vinculoUsuario` sem `orderBy` explícito pra escolher
   qual unidade usar quando o usuário tem mais de um vínculo com
@@ -168,6 +171,10 @@ silenciosamente:
   hoje é só revisão manual + o teste de isolamento manual em
   `dashboard.integration-spec.ts` (que passaria a falhar se o filtro fosse
   removido, mas não de forma óbvia/dirigida ao motivo).
+- **SUGESTÃO** (aberta, Prompt 10.6): `AvisosService.marcarComoLido` não
+  tem teste explícito de idempotência (marcar como lido um aviso já lido
+  duas vezes) — comportamento atual é sobrescrever `lidoEm` com um novo
+  timestamp, o que é aceitável, só não está coberto por teste nomeado.
 
 ## Decisões de escopo do módulo chamados (Prompt 4, revisado no Prompt B)
 - `POST /condominios/:id/chamados`: só SINDICO e CONDOMINO abrem chamado
@@ -657,6 +664,90 @@ silenciosamente:
     (síndico→dashboard→chamado, condômino→saldo→reserva) num navegador
     real — capturas de tela conferidas manualmente, não só os testes
     automatizados.
+
+## Decisões de escopo de documentos, avisos e dashboard da administradora no frontend (Prompt 10.6)
+- Único endpoint novo de backend deste prompt (o resto reaproveita as
+  APIs já testadas dos Prompts 6, 7 e 8, por instrução explícita):
+  `PATCH /avisos/:avisoId/marcar-lido` (`AvisosController`/
+  `AvisosService.marcarComoLido`). Mesmo padrão "minha conta" de
+  `GET /usuarios/me/avisos` (sem `@Roles`, sem `tenantPrisma`) — busca a
+  `AvisoLeitura` pela chave composta exata `[avisoId, usuarioId]`
+  (`@@unique` do model) e responde 404 se não existir. Como essa linha só
+  existe pra um usuário que já foi resolvido como destinatário legítimo
+  no momento da criação do aviso (dentro do `tenantPrisma` da rota de
+  criação), a igualdade dupla é estritamente mais restritiva que qualquer
+  filtro físico de tenant possível — cobre "aviso de outro usuário",
+  "aviso de outro tenant" e "avisoId inexistente" com o mesmo 404, sem
+  precisar de um novo branch em `tenant-scope-resolver.service.ts`.
+  Validado pelo tenant-security-reviewer (nenhum CRÍTICO/AVISO).
+- `/documentos`: sem endpoint de "listar unidades do condomínio" em
+  nenhum prompt anterior (só existe `GET /unidades/:unidadeId`,
+  unidade-a-unidade) — fora do escopo deste prompt criar um (instrução
+  explícita de não tocar backend além do item acima). Não se aplica a
+  documentos diretamente, mas é a mesma razão pela qual o formulário de
+  aviso (abaixo) usa um campo de texto livre pro ID da unidade.
+- Upload em `/documentos` faz `PUT` direto pro `uploadUrl` assinado
+  (fetch puro, fora do `apiFetch` — é uma URL do R2, não da API, não leva
+  `Authorization`). O input `type="file"` não tem `required`: a validação
+  de "selecionou um arquivo?" é feita em JS (`if (!arquivo) setErro(...)`)
+  em vez de depender da validação nativa do HTML5, porque o suporte de
+  `required` em `input[type=file]` é inconsistente entre o que
+  `userEvent.upload` consegue simular em jsdom e o comportamento real de
+  navegador — preferimos uma validação que se comporta igual nos dois
+  ambientes.
+- Em dev, `R2_ACCOUNT_ID`/`R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY` no
+  `.env` ainda são os placeholders do `.env.example` (nenhuma conta R2
+  real configurada nesta máquina) — o presign em si (`gerarUrlUpload`) é
+  cálculo local da SDK e funciona mesmo com credenciais falsas, mas o
+  `PUT` real pro host resultante falha (DNS não resolve um account id
+  fictício). Verificado manualmente que esse caminho falha de forma
+  controlada (mensagem de erro na tela, sem crash) — a cobertura real do
+  fluxo de upload completo (presign → PUT → arquivo acessível) é o teste
+  de componente (`documentos-content.test.tsx`, mockando a chamada de
+  rede) e o `documentos.integration-spec.ts` já existente (com
+  `FakeR2Client`), nunca uma chamada de rede real nesta base.
+- `/avisos`: o formulário de criação (SINDICO/ADMINISTRADORA) usa um
+  campo de texto livre pro ID da unidade quando o escopo é "unidade
+  específica", em vez de um seletor — não existe endpoint de listagem de
+  unidades de um condomínio (ver item acima) e criar um fugiria da
+  instrução explícita de não adicionar backend novo além do
+  `marcar-lido`. UX mais bruta que o ideal (cuid em vez de
+  identificador/bloco-apto), documentado aqui como decisão deliberada,
+  não como bug — revisar se um endpoint de listagem de unidades for
+  criado por outro motivo no futuro.
+- `/avisos` mostra o formulário de criação OU a lista de não lidos, nunca
+  os dois ao mesmo tempo, decidido só pelo papel (`ADMINISTRADORA`/
+  `SINDICO` → formulário; `CONDOMINO` → lista) — leitura literal do
+  prompt ("Para SINDICO/ADMINISTRADORA: formulário... Para CONDOMINO:
+  lista"), mesmo o SINDICO sendo também destinatário de avisos por regra
+  de negócio (`resolverDestinatariosDoAviso`). Ele não vê a própria caixa
+  de não lidos nesta tela — decisão de escopo do frontend, não do
+  backend (`GET /usuarios/me/avisos` continua retornando os avisos dele
+  normalmente, só não é chamado nesta tela quando o papel é
+  SINDICO/ADMINISTRADORA).
+- `AvisoForm` (`app/(app)/avisos/aviso-form.tsx`) é um componente
+  separado de `AvisosContent`, só pra ficar testável isoladamente (mesmo
+  motivo de `LoginForm` ser separado de `app/login/page.tsx` no Prompt
+  10.5) — recebe `condominioId` por prop e um `onCriado` opcional, sem
+  saber nada sobre papel/RBAC.
+- `/administradora/dashboard`: novo helper `obterAdministradoraId` em
+  `lib/auth.ts` (mesmo padrão de `obterCondominioId`, lê o primeiro
+  vínculo do JWT com `administradoraId`). Link "Carteira" na barra
+  lateral só aparece pra quem tem vínculo ADMINISTRADORA
+  (`Sidebar` agora lê `obterVinculos()`/`temPapel` num `useEffect`, ao
+  contrário dos outros 4 itens estáticos) — diferente da decisão do
+  Prompt 10.5 de não filtrar os itens do menu por papel; aqui filtra,
+  porque mostrar "Carteira" pra um SINDICO levaria a uma página que
+  `RequireRole` imediatamente redireciona pra fora, sem nenhum benefício
+  de "pelo menos vê que existe" (os outros 4 itens são compartilhados
+  por todo papel autenticado, este é exclusivo de um único papel).
+- As três telas verificadas manualmente contra o banco populado pelo
+  seed do Prompt 10 (`npm run db:seed`), num navegador real: upload
+  visível só pro síndico e ausente pro condômino em `/documentos`; aviso
+  criado pelo síndico aparece na caixa de não lidos do condômino em
+  `/avisos`, e "marcar como lido" remove da lista; link "Carteira" e
+  `/administradora/dashboard` visíveis só pra administradora, com os
+  totais agregados da carteira renderizados corretamente.
 
 ## Definição de "pronto"
 Uma tarefa só está concluída quando: os testes relevantes passam,

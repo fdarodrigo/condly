@@ -19,10 +19,12 @@ describe('Módulo avisos', () => {
   let fixtures: Awaited<ReturnType<typeof criarFixtures>>;
   let unidade3: { id: string };
   let usuarioCondomino3: { id: string; email: string };
+  let usuarioCondominoOutroTenant: { id: string; email: string };
   let tokenSindico: string;
   let tokenCondomino: string;
   let tokenCondomino3: string;
   let tokenAdministradora: string;
+  let tokenCondominoOutroTenant: string;
 
   async function login(email: string): Promise<string> {
     const res = await request(app.getHttpServer())
@@ -61,10 +63,26 @@ describe('Módulo avisos', () => {
       data: { usuarioId: usuarioCondomino3.id, papel: 'CONDOMINO', unidadeId: unidade3.id },
     });
 
+    usuarioCondominoOutroTenant = await prisma.usuario.create({
+      data: {
+        nome: 'Condômino Outro Tenant',
+        email: 'condomino-outro-tenant@example.com',
+        senhaHash,
+      },
+    });
+    await prisma.vinculoUsuario.create({
+      data: {
+        usuarioId: usuarioCondominoOutroTenant.id,
+        papel: 'CONDOMINO',
+        unidadeId: fixtures.unidade2.id,
+      },
+    });
+
     tokenSindico = await login(fixtures.usuarioSindico.email);
     tokenCondomino = await login(fixtures.usuarioCondomino.email);
     tokenCondomino3 = await login(usuarioCondomino3.email);
     tokenAdministradora = await login(fixtures.usuarioAdministradora.email);
+    tokenCondominoOutroTenant = await login(usuarioCondominoOutroTenant.email);
   });
 
   afterAll(async () => {
@@ -225,6 +243,79 @@ describe('Módulo avisos', () => {
         .get('/usuarios/me/avisos')
         .set('Authorization', `Bearer ${tokenCondomino}`);
       expect(resCondomino.body.map((a: { id: string }) => a.id)).not.toContain(aviso.body.id);
+    });
+  });
+
+  describe('PATCH /avisos/:avisoId/marcar-lido', () => {
+    it('marca como lido e o aviso some da lista de não lidos', async () => {
+      const aviso = await request(app.getHttpServer())
+        .post(`/condominios/${fixtures.condominio1.id}/avisos`)
+        .set('Authorization', `Bearer ${tokenSindico}`)
+        .send({ titulo: 'Aviso pra marcar como lido', corpo: 'x', canais: ['APP'] });
+      expect(aviso.status).toBe(201);
+
+      const antes = await request(app.getHttpServer())
+        .get('/usuarios/me/avisos')
+        .set('Authorization', `Bearer ${tokenCondomino}`);
+      expect(antes.body.map((a: { id: string }) => a.id)).toContain(aviso.body.id);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/avisos/${aviso.body.id}/marcar-lido`)
+        .set('Authorization', `Bearer ${tokenCondomino}`);
+      expect(res.status).toBe(200);
+
+      const depois = await request(app.getHttpServer())
+        .get('/usuarios/me/avisos')
+        .set('Authorization', `Bearer ${tokenCondomino}`);
+      expect(depois.body.map((a: { id: string }) => a.id)).not.toContain(aviso.body.id);
+
+      const leitura = await prisma.avisoLeitura.findUnique({
+        where: {
+          avisoId_usuarioId: { avisoId: aviso.body.id, usuarioId: fixtures.usuarioCondomino.id },
+        },
+      });
+      expect(leitura?.lidoEm).not.toBeNull();
+    });
+
+    it('rejeita com 404 ao tentar marcar como lido um aviso que não é destinatário (outro usuário)', async () => {
+      const aviso = await request(app.getHttpServer())
+        .post(`/condominios/${fixtures.condominio1.id}/avisos`)
+        .set('Authorization', `Bearer ${tokenSindico}`)
+        .send({
+          titulo: 'Aviso só da unidade 1',
+          corpo: 'x',
+          canais: ['APP'],
+          unidadeId: fixtures.unidade1.id,
+        });
+      expect(aviso.status).toBe(201);
+
+      // tokenCondomino3 é de outra unidade do MESMO condomínio, mas não é
+      // destinatário deste aviso de escopo "unidade específica" — não tem
+      // linha de AvisoLeitura pra esse par [avisoId, usuarioId].
+      const res = await request(app.getHttpServer())
+        .patch(`/avisos/${aviso.body.id}/marcar-lido`)
+        .set('Authorization', `Bearer ${tokenCondomino3}`);
+      expect(res.status).toBe(404);
+    });
+
+    it('rejeita com 404 ao tentar marcar como lido um aviso de outro tenant', async () => {
+      const aviso = await request(app.getHttpServer())
+        .post(`/condominios/${fixtures.condominio1.id}/avisos`)
+        .set('Authorization', `Bearer ${tokenSindico}`)
+        .send({ titulo: 'Aviso do condomínio 1', corpo: 'x', canais: ['APP'] });
+      expect(aviso.status).toBe(201);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/avisos/${aviso.body.id}/marcar-lido`)
+        .set('Authorization', `Bearer ${tokenCondominoOutroTenant}`);
+      expect(res.status).toBe(404);
+    });
+
+    it('rejeita com 404 quando o avisoId não existe', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/avisos/id-inexistente/marcar-lido')
+        .set('Authorization', `Bearer ${tokenCondomino}`);
+      expect(res.status).toBe(404);
     });
   });
 });

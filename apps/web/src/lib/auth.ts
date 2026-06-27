@@ -59,6 +59,10 @@ export function obterCondominioId(vinculos: VinculoToken[]): string | undefined 
   return vinculos.find((vinculo) => vinculo.condominioId)?.condominioId;
 }
 
+export function obterAdministradoraId(vinculos: VinculoToken[]): string | undefined {
+  return vinculos.find((vinculo) => vinculo.administradoraId)?.administradoraId;
+}
+
 /**
  * SINDICO/ADMINISTRADORA caem no dashboard do condomínio; CONDOMINO cai na
  * própria unidade. Decisão do Prompt 10.5 — se um usuário tiver mais de um

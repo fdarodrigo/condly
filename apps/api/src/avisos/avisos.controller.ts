@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/rbac/roles.guard';
 import { Roles } from '../auth/rbac/roles.decorator';
@@ -32,5 +41,13 @@ export class AvisosController {
   @Get('usuarios/me/avisos')
   listarMeusNaoLidos(@CurrentUser() usuario: AuthenticatedUser) {
     return this.avisosService.listarNaoLidos(usuario.usuarioId);
+  }
+
+  // Mesmo padrão "minha conta" da rota acima: sem @Roles, o filtro de
+  // tenant é a busca pela chave composta [avisoId, usuarioId] dentro do
+  // service (ver AvisosService.marcarComoLido).
+  @Patch('avisos/:avisoId/marcar-lido')
+  marcarComoLido(@Param('avisoId') avisoId: string, @CurrentUser() usuario: AuthenticatedUser) {
+    return this.avisosService.marcarComoLido(avisoId, usuario.usuarioId);
   }
 }

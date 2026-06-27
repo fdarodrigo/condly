@@ -49,6 +49,30 @@ export class AvisosService {
     return leituras.map((leitura) => leitura.aviso);
   }
 
+  /**
+   * Busca pela chave composta `[avisoId, usuarioId]` (igual ao
+   * `@@unique` do model) — não existe linha de AvisoLeitura pra um par
+   * que não seja "este usuário é destinatário deste aviso", então o
+   * mesmo 404 cobre aviso inexistente, aviso de outro usuário e aviso de
+   * outro tenant sem precisar de nenhum branch novo em
+   * tenant-scope-resolver.service.ts (mesmo espírito do "me" pattern já
+   * usado em listarNaoLidos: o filtro de tenant aqui é a própria
+   * igualdade usuarioId = usuário logado).
+   */
+  async marcarComoLido(avisoId: string, usuarioId: string): Promise<void> {
+    const leitura = await this.prisma.avisoLeitura.findUnique({
+      where: { avisoId_usuarioId: { avisoId, usuarioId } },
+    });
+    if (!leitura) {
+      throw new NotFoundException('Aviso não encontrado.');
+    }
+
+    await this.prisma.avisoLeitura.update({
+      where: { id: leitura.id },
+      data: { lidoEm: new Date() },
+    });
+  }
+
   private async dispararEnvio(aviso: Aviso, tenantPrisma: TenantPrismaClient): Promise<void> {
     const destinatarios = await resolverDestinatariosDoAviso(aviso, tenantPrisma);
 
