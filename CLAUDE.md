@@ -25,7 +25,12 @@ navegação, não a fonte da verdade.
   teste (`TEST_DATABASE_URL`) e roda os specs `*.integration-spec.ts`
 - `npm run lint` / `npx tsc --noEmit` — lint e checagem de tipos
 - `npx prisma migrate dev` — aplicar migrations no banco de desenvolvimento
-- `npm run db:seed` — popular banco de demonstração (ainda não implementado)
+- `npm run db:seed` — popular banco de demonstração (`DATABASE_URL`, **apaga
+  todo o conteúdo das tabelas de domínio antes de recriar** — nunca rodar
+  num banco com dados reais)
+- `npm run db:seed:smoke-test` — roda o seed contra `TEST_DATABASE_URL` e
+  confere as contagens esperadas de cada entidade (detecta rápido se uma
+  mudança no schema quebrou o seed)
 
 ## Regra inegociável: isolamento multi-tenant
 Toda query que toca Condominio, Unidade, Cobranca, Chamado, Documento,
@@ -454,12 +459,60 @@ em nenhuma das rodadas. Itens abertos, não ignorar silenciosamente:
   deste prompt; revisar se o produto passar a tratar multi-unidade por
   telefone como caso comum.
 
-## Pendência para o Prompt 10 (seed)
-`Unidade` ganhou os campos opcionais `responsavelNome`, `responsavelEmail`
-e `responsavelCpfCnpj` (ver módulo financeiro). Quando o seed de demonstração
-for criado/reexecutado, preencha esses campos com dados fictícios válidos —
-sem isso, qualquer cobrança de demonstração roda só em modo sandbox (com
-aviso no log) e falha com 422 se `ASAAS_ENV=production`.
+## Decisões de escopo do seed de demonstração (Prompt 10)
+- `prisma/seed.ts` exporta `seed(prisma: PrismaService)` (lógica pura,
+  reaproveitável) e só executa via CLI no bloco `if (require.main ===
+  module)` no rodapé — permite que `scripts/verify-seed-counts.ts` (smoke
+  test) chame a mesma função direto, sem subir um processo novo, e
+  garante que `npx prisma db seed` (configurado em `migrations.seed` de
+  `prisma.config.ts`, comando `ts-node prisma/seed.ts`) e
+  `npm run db:seed` rodam exatamente o mesmo código.
+- O seed começa chamando `limparBanco` (reaproveitado de
+  `test/helpers/cleanup-database.ts`, mesma ordem segura de FK já usada
+  pelos testes de integração) — **apaga TODO o conteúdo das tabelas de
+  domínio antes de recriar o cenário fixo**, não faz upsert incremental.
+  Decisão deliberada: torna o seed idempotente (rodar de novo nunca colide
+  com `Condominio.cnpj`/`Usuario.email` únicos da execução anterior) ao
+  custo de ser destrutivo — aceitável porque a finalidade explícita do
+  comando é "popular banco de demonstração", nunca preservar dados reais.
+  Por isso reaproveita o helper de teste em vez de duplicar a lista de
+  `deleteMany` em ordem de FK: é o mesmo tipo de operação (wipe completo
+  num banco descartável/de demo), só num arquivo fora de `test/`.
+- Datas (vencimento de cobrança, período de atraso, datas de reserva, data
+  de envio de aviso) são calculadas relativas a `new Date()` no momento da
+  execução, nunca hardcoded — o seed produz o mesmo cenário coerente
+  ("12 cobranças pagas, 4 pendentes, 2 atrasadas há mais de 10 dias, tudo
+  no mês atual") em qualquer dia em que for executado. Quando "hoje" cai
+  nos primeiros dias do mês, o clamp pro início do mês pode deixar uma
+  cobrança "atrasada" com menos de 10 dias de atraso — tradeoff documentado
+  no código (`criarCobrancas`), aceitável só porque é dado de demonstração.
+- Cobranças do seed são inseridas direto via `prisma.cobranca.create`
+  (nunca passam por `FinanceiroService`/`AsaasClient`) — o seed nunca faz
+  chamada de rede. `Unidade.responsavelCpfCnpj` é preenchido com um CPF de
+  formato plausível só pra satisfazer a pendência documentada
+  anteriormente aqui (campo não fica vazio), mas **não é um CPF
+  validável por dígito verificador real** — irrelevante pro seed porque
+  ele nunca aciona a validação de produção do Asaas.
+- `npm run db:seed:smoke-test` (`scripts/seed-smoke-test.js` +
+  `scripts/verify-seed-counts.ts`) roda contra `TEST_DATABASE_URL`, nunca
+  `DATABASE_URL` — mesmo banco descartável de `test:integration` — e falha
+  com exit code != 0 se qualquer contagem (`Administradora`, `Condominio`,
+  `Unidade`, `Usuario`, `VinculoUsuario`, `Cobranca` por status, `AreaComum`,
+  `Reserva`, `Chamado` por status, `Aviso`, `AvisoLeitura`) não bater com o
+  esperado — não é uma suíte Jest (não precisa, é só uma checagem rápida de
+  regressão pro seed), mas faz parte do mesmo gate de "definição de pronto"
+  de qualquer mudança que toque o schema.
+- **AVISO corrigido**: `migrations.seed` em `prisma.config.ts` faz `npx
+  prisma migrate dev`/`migrate reset` disparar o seed automaticamente
+  contra qualquer `DATABASE_URL` no momento, sem nenhuma trava própria.
+  Como o seed é destrutivo (`limparBanco` antes de popular), `main()` em
+  `prisma/seed.ts` (`validarBancoDeDesenvolvimento`) recusa rodar se
+  `DATABASE_URL` não contiver `_dev`/`_test` — hoje o produto só tem
+  `condly_dev`/`condly_test` locais, então nunca trava o uso legítimo, mas
+  vira rede de segurança no dia em que existir staging/produção com outro
+  padrão de nome. Reforçar essa trava (ex: variável explícita) se um
+  ambiente real com dados de tenants existir antes desse padrão de nome
+  ser revisado.
 
 ## Definição de "pronto"
 Uma tarefa só está concluída quando: os testes relevantes passam,

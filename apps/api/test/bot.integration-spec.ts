@@ -258,7 +258,9 @@ describe('Bot do WhatsApp', () => {
     it('"reservar" + área que só existe em outro condomínio nunca atravessa o tenant', async () => {
       // "Quadra de Tênis" existe de fato no banco, mas só no condominio2 —
       // o telefone de teste está vinculado à unidade1, do condominio1.
-      const res = await postWebhook(payloadMensagem(TELEFONE_CONDOMINO, 'quero reservar a quadra de tênis'));
+      const res = await postWebhook(
+        payloadMensagem(TELEFONE_CONDOMINO, 'quero reservar a quadra de tênis'),
+      );
 
       expect(res.status).toBe(200);
       const resposta = fakeCloudApiClient.chamadas[0].texto;
