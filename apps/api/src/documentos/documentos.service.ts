@@ -2,6 +2,7 @@ import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nest
 import { randomUUID } from 'node:crypto';
 import { TenantPrismaClient } from '../prisma/tenant-prisma';
 import { AuthenticatedUser } from '../auth/types/auth.types';
+import { VinculoAmploService } from '../auth/rbac/vinculo-amplo.service';
 import { R2_CLIENT, R2Client } from './storage/r2-client.interface';
 import { CriarUploadUrlDto } from './dto/criar-upload-url.dto';
 
@@ -13,7 +14,10 @@ function sanitizarNomeArquivo(nomeArquivo: string): string {
 
 @Injectable()
 export class DocumentosService {
-  constructor(@Inject(R2_CLIENT) private readonly r2Client: R2Client) {}
+  constructor(
+    @Inject(R2_CLIENT) private readonly r2Client: R2Client,
+    private readonly vinculoAmploService: VinculoAmploService,
+  ) {}
 
   async criarUrlUpload(
     condominioId: string,
@@ -38,7 +42,7 @@ export class DocumentosService {
    * que o vínculo dele autorize o acesso à rota (nível condomínio).
    */
   async listar(condominioId: string, usuario: AuthenticatedUser, tenantPrisma: TenantPrismaClient) {
-    const vinculoAmplo = await this.temAcessoAmplo(usuario, condominioId, tenantPrisma);
+    const vinculoAmplo = await this.vinculoAmploService.possui(usuario, condominioId, tenantPrisma);
 
     return tenantPrisma.documento.findMany({
       where: { condominioId, ...(vinculoAmplo ? {} : { visibilidade: 'TODOS' }) },
@@ -57,7 +61,11 @@ export class DocumentosService {
     }
 
     if (documento.visibilidade === 'SINDICO_ADMINISTRADORA') {
-      const vinculoAmplo = await this.temAcessoAmplo(usuario, documento.condominioId, tenantPrisma);
+      const vinculoAmplo = await this.vinculoAmploService.possui(
+        usuario,
+        documento.condominioId,
+        tenantPrisma,
+      );
       if (!vinculoAmplo) {
         throw new ForbiddenException('Você não tem permissão para acessar este documento.');
       }
@@ -69,32 +77,5 @@ export class DocumentosService {
     );
 
     return { url, expiraEmSegundos: DOWNLOAD_URL_EXPIRES_IN_SECONDS };
-  }
-
-  private async temAcessoAmplo(
-    usuario: AuthenticatedUser,
-    condominioId: string,
-    tenantPrisma: TenantPrismaClient,
-  ): Promise<boolean> {
-    const temVinculoAdministradora = usuario.vinculos.some(
-      (vinculo) => vinculo.papel === 'ADMINISTRADORA',
-    );
-    // Só busca o condomínio se houver um vínculo ADMINISTRADORA a verificar —
-    // evita a query extra no caso comum (SINDICO já resolve por condominioId
-    // direto, sem precisar saber a administradoraId).
-    const administradoraIdDoCondominio = temVinculoAdministradora
-      ? (await tenantPrisma.condominio.findUnique({ where: { id: condominioId } }))
-          ?.administradoraId
-      : undefined;
-
-    return usuario.vinculos.some((vinculo) => {
-      if (vinculo.papel === 'SINDICO') {
-        return vinculo.condominioId === condominioId;
-      }
-      if (vinculo.papel === 'ADMINISTRADORA') {
-        return vinculo.administradoraId === administradoraIdDoCondominio;
-      }
-      return false;
-    });
   }
 }

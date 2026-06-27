@@ -55,10 +55,12 @@ genérico (utilitários, helpers sem relação direta com o domínio) segue
 a convenção padrão em inglês do ecossistema Node/TypeScript. Não
 misture os dois dentro da mesma entidade.
 
-## Débito técnico conhecido (revisão de segurança pós-Prompt 3, reauditado pós-Prompt 4)
+## Débito técnico conhecido (revisão de segurança pós-Prompt 3, reauditado pós-Prompt 4 e pós-Prompt 7)
 Review do tenant-security-reviewer sobre schema + auth/RBAC + financeiro.
 Reauditado retroativamente sobre toda a base (Prompts 1-4) após o
-commit inicial — nenhum CRÍTICO encontrado nas duas rodadas. Itens
+commit inicial, e de novo sobre os módulos de chamados (visibilidade/
+máquina de estados), reservas, documentos e avisos (commits `71415f7`
+a `c40b4e8`) — nenhum CRÍTICO encontrado em nenhuma das rodadas. Itens
 abertos, não ignorar silenciosamente:
 - **AVISO** (corrigido): `ChamadosService.atualizar` validava
   `responsavelId` só checando se o `Usuario` existia, sem checar tenant
@@ -91,6 +93,21 @@ abertos, não ignorar silenciosamente:
 - **SUGESTÃO** (aberta): `processarWebhookPagamento` não loga tentativas de
   webhook com `idExternoGateway` desconhecido — dificulta auditoria caso o
   token de webhook seja comprometido (logar só o id, nunca o payload).
+- **SUGESTÃO** (aberta): `ReservasService.cancelar` não loga quem cancelou
+  uma reserva (`reservaId` + papel do usuário) — é soft delete, mas é uma
+  operação destrutiva acessível por CONDOMINO, SINDICO e ADMINISTRADORA, e
+  hoje não há trilha de auditoria de quem confirmou o cancelamento. Mesmo
+  espírito da sugestão acima sobre logging de webhooks.
+- **SUGESTÃO** (corrigida): a checagem de "vínculo amplo" (SINDICO do
+  condomínio, ou ADMINISTRADORA da administradora DESTE condomínio
+  especificamente — não basta ter algum vínculo ADMINISTRADORA, checagem
+  que existe desde a correção do Prompt B) estava duplicada, idêntica,
+  entre `ChamadosService.listar` e `DocumentosService.temAcessoAmplo`.
+  Extraída para `VinculoAmploService` (`auth/rbac/vinculo-amplo.service.ts`,
+  exportado por `AuthModule`) — os dois services agora chamam
+  `vinculoAmploService.possui(usuario, condominioId, tenantPrisma)`. Sem
+  mudança de comportamento: `chamados.integration-spec.ts` e
+  `documentos.integration-spec.ts` continuaram passando sem alteração.
 
 ## Decisões de escopo do módulo chamados (Prompt 4, revisado no Prompt B)
 - `POST /condominios/:id/chamados`: só SINDICO e CONDOMINO abrem chamado

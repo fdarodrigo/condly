@@ -7,6 +7,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './rbac/roles.guard';
 import { TenantScopeResolverService } from './rbac/tenant-scope-resolver.service';
+import { VinculoAmploService } from './rbac/vinculo-amplo.service';
 
 @Module({
   imports: [
@@ -19,7 +20,14 @@ import { TenantScopeResolverService } from './rbac/tenant-scope-resolver.service
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard, RolesGuard, TenantScopeResolverService],
-  exports: [JwtAuthGuard, RolesGuard, TenantScopeResolverService],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    JwtAuthGuard,
+    RolesGuard,
+    TenantScopeResolverService,
+    VinculoAmploService,
+  ],
+  exports: [JwtAuthGuard, RolesGuard, TenantScopeResolverService, VinculoAmploService],
 })
 export class AuthModule {}

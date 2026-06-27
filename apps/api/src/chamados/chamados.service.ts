@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { TenantPrismaClient } from '../prisma/tenant-prisma';
 import { AuthenticatedUser } from '../auth/types/auth.types';
+import { VinculoAmploService } from '../auth/rbac/vinculo-amplo.service';
 import { StatusChamado } from '../../generated/prisma/client';
 import { CriarChamadoDto } from './dto/criar-chamado.dto';
 import { AtualizarChamadoDto } from './dto/atualizar-chamado.dto';
@@ -23,7 +24,10 @@ const TRANSICOES_VALIDAS: Record<StatusChamado, StatusChamado[]> = {
 
 @Injectable()
 export class ChamadosService {
-  constructor(private readonly eventEmitter: EventEmitter2) {}
+  constructor(
+    private readonly eventEmitter: EventEmitter2,
+    private readonly vinculoAmploService: VinculoAmploService,
+  ) {}
 
   /**
    * Status inicial depende de quem abre: síndico abre já como ABERTO,
@@ -81,26 +85,7 @@ export class ChamadosService {
     usuario: AuthenticatedUser,
     tenantPrisma: TenantPrismaClient,
   ) {
-    const temVinculoAdministradora = usuario.vinculos.some(
-      (vinculo) => vinculo.papel === 'ADMINISTRADORA',
-    );
-    // Só busca o condomínio se houver um vínculo ADMINISTRADORA a verificar —
-    // evita a query extra no caso comum (SINDICO/CONDOMINO já resolvem por
-    // condominioId direto, sem precisar saber a administradoraId).
-    const administradoraIdDoCondominio = temVinculoAdministradora
-      ? (await tenantPrisma.condominio.findUnique({ where: { id: condominioId } }))
-          ?.administradoraId
-      : undefined;
-
-    const vinculoAmplo = usuario.vinculos.some((vinculo) => {
-      if (vinculo.papel === 'SINDICO') {
-        return vinculo.condominioId === condominioId;
-      }
-      if (vinculo.papel === 'ADMINISTRADORA') {
-        return vinculo.administradoraId === administradoraIdDoCondominio;
-      }
-      return false;
-    });
+    const vinculoAmplo = await this.vinculoAmploService.possui(usuario, condominioId, tenantPrisma);
 
     const vinculoCondomino = usuario.vinculos.find(
       (vinculo) => vinculo.papel === 'CONDOMINO' && vinculo.condominioId === condominioId,
