@@ -21,11 +21,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (!autenticado) return null;
 
   return (
-    <div className="flex min-h-screen bg-muted/40">
+    <div className="flex min-h-screen bg-background">
       <Sidebar />
       <div className="flex flex-1 flex-col">
         <Topbar />
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 p-6 md:p-8">
+          <div className="mx-auto flex w-full max-w-5xl flex-col">{children}</div>
+        </main>
       </div>
     </div>
   );

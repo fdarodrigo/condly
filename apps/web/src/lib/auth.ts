@@ -63,6 +63,24 @@ export function obterAdministradoraId(vinculos: VinculoToken[]): string | undefi
   return vinculos.find((vinculo) => vinculo.administradoraId)?.administradoraId;
 }
 
+const LABEL_PAPEL: Record<Papel, string> = {
+  ADMINISTRADORA: 'Administradora',
+  SINDICO: 'Síndico',
+  CONDOMINO: 'Condômino',
+};
+
+/**
+ * Só pra exibição (badge de papel na topbar) — o JWT não traz nome/e-mail
+ * do usuário, então não há como mostrar mais do que isso sem um endpoint
+ * novo. Mesma ordem de prioridade de `rotaInicialParaVinculos` quando o
+ * usuário acumula mais de um papel.
+ */
+export function papelPrincipal(vinculos: VinculoToken[]): string | undefined {
+  const ordemPrioridade: Papel[] = ['ADMINISTRADORA', 'SINDICO', 'CONDOMINO'];
+  const papel = ordemPrioridade.find((p) => vinculos.some((vinculo) => vinculo.papel === p));
+  return papel ? LABEL_PAPEL[papel] : undefined;
+}
+
 /**
  * SINDICO/ADMINISTRADORA caem no dashboard do condomínio; CONDOMINO cai na
  * própria unidade. Decisão do Prompt 10.5 — se um usuário tiver mais de um

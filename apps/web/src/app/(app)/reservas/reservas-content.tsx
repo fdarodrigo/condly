@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { CheckCircle2, Clock, Lock, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -103,7 +104,10 @@ export function ReservasContent() {
   return (
     <Card className="max-w-lg">
       <CardHeader>
-        <CardTitle>Reservar área comum</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <MapPin className="size-4 text-muted-foreground" aria-hidden="true" />
+          Reservar área comum
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {erro && (
@@ -112,9 +116,13 @@ export function ReservasContent() {
           </p>
         )}
         {mensagem && (
-          <p className="text-sm text-emerald-700" data-testid="reservas-mensagem">
+          <div
+            className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700"
+            data-testid="reservas-mensagem"
+          >
+            <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
             {mensagem}
-          </p>
+          </div>
         )}
 
         <div className="flex flex-col gap-1.5">
@@ -122,7 +130,7 @@ export function ReservasContent() {
           <select
             id="area-comum"
             data-testid="reservas-area"
-            className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            className="h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
             value={areaComumId}
             onChange={(evento) => setAreaComumId(evento.target.value)}
           >
@@ -140,7 +148,7 @@ export function ReservasContent() {
             id="data-reserva"
             type="date"
             data-testid="reservas-data"
-            className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            className="h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
             value={data}
             onChange={(evento) => setData(evento.target.value)}
           />
@@ -155,20 +163,25 @@ export function ReservasContent() {
               {disponibilidade.ocupados.map((intervalo) => (
                 <li
                   key={`ocupado-${intervalo.inicio}`}
-                  className="flex items-center justify-between rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
+                  className="flex items-center justify-between rounded-lg border border-border bg-muted/60 px-3 py-2 text-sm text-muted-foreground"
                 >
-                  <span>
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="size-3.5" aria-hidden="true" />
                     {formatarHora(intervalo.inicio)} – {formatarHora(intervalo.fim)}
                   </span>
-                  <span data-testid="horario-reservado">Reservado</span>
+                  <span className="flex items-center gap-1 text-xs" data-testid="horario-reservado">
+                    <Lock className="size-3" aria-hidden="true" />
+                    Reservado
+                  </span>
                 </li>
               ))}
               {disponibilidade.livres.map((intervalo) => (
                 <li
                   key={`livre-${intervalo.inicio}`}
-                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
+                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm transition-colors hover:border-primary/30 hover:bg-primary/3"
                 >
-                  <span>
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="size-3.5 text-primary" aria-hidden="true" />
                     {formatarHora(intervalo.inicio)} – {formatarHora(intervalo.fim)}
                   </span>
                   <Button

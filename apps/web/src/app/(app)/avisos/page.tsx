@@ -1,10 +1,12 @@
+import { Bell } from 'lucide-react';
+import { PageHeader } from '@/components/layout/page-header';
 import { RequireRole } from '@/components/layout/require-role';
 import { AvisosContent } from './avisos-content';
 
 export default function AvisosPage() {
   return (
     <RequireRole roles={['ADMINISTRADORA', 'SINDICO', 'CONDOMINO']}>
-      <h1 className="mb-6 text-xl font-semibold">Avisos</h1>
+      <PageHeader icone={Bell} titulo="Avisos" descricao="Comunicados do condomínio." />
       <AvisosContent />
     </RequireRole>
   );

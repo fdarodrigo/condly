@@ -1,15 +1,17 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import { Building, Mail, MessageCircle, Send, Smartphone, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ApiError, apiFetch } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 
 const CANAIS_DISPONIVEIS = [
-  { valor: 'APP', label: 'App' },
-  { valor: 'EMAIL', label: 'E-mail' },
-  { valor: 'WHATSAPP', label: 'WhatsApp' },
+  { valor: 'APP', label: 'App', icone: Smartphone },
+  { valor: 'EMAIL', label: 'E-mail', icone: Mail },
+  { valor: 'WHATSAPP', label: 'WhatsApp', icone: MessageCircle },
 ] as const;
 
 interface AvisoFormProps {
@@ -80,7 +82,8 @@ export function AvisoForm({ condominioId, onCriado }: AvisoFormProps) {
         </p>
       )}
       {mensagem && (
-        <p className="text-sm text-emerald-700" data-testid="aviso-form-mensagem">
+        <p className="flex items-center gap-1.5 text-sm text-emerald-700" data-testid="aviso-form-mensagem">
+          <Send className="size-3.5" aria-hidden="true" />
           {mensagem}
         </p>
       )}
@@ -102,7 +105,7 @@ export function AvisoForm({ condominioId, onCriado }: AvisoFormProps) {
           id="aviso-corpo"
           required
           rows={4}
-          className="rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm"
+          className="rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
           value={corpo}
           onChange={(evento) => setCorpo(evento.target.value)}
           data-testid="aviso-corpo"
@@ -111,44 +114,79 @@ export function AvisoForm({ condominioId, onCriado }: AvisoFormProps) {
 
       <fieldset className="flex flex-col gap-1.5">
         <span className="text-sm font-medium">Canais</span>
-        <div className="flex flex-wrap gap-3">
-          {CANAIS_DISPONIVEIS.map((canal) => (
-            <label key={canal.valor} className="flex items-center gap-1.5 text-sm">
-              <input
-                type="checkbox"
-                checked={canais.includes(canal.valor)}
-                onChange={() => alternarCanal(canal.valor)}
-                data-testid={`aviso-canal-${canal.valor.toLowerCase()}`}
-              />
-              {canal.label}
-            </label>
-          ))}
+        <div className="flex flex-wrap gap-2">
+          {CANAIS_DISPONIVEIS.map((canal) => {
+            const Icone = canal.icone;
+            return (
+              <label key={canal.valor} className="cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={canais.includes(canal.valor)}
+                  onChange={() => alternarCanal(canal.valor)}
+                  data-testid={`aviso-canal-${canal.valor.toLowerCase()}`}
+                  className="peer sr-only"
+                />
+                <span
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-full border border-input px-3 py-1.5 text-sm font-medium text-foreground/70 transition-colors',
+                    'peer-checked:border-primary/30 peer-checked:bg-primary/10 peer-checked:text-primary',
+                    'peer-focus-visible:ring-3 peer-focus-visible:ring-ring/50',
+                  )}
+                >
+                  <Icone className="size-3.5" aria-hidden="true" />
+                  {canal.label}
+                </span>
+              </label>
+            );
+          })}
         </div>
       </fieldset>
 
       <fieldset className="flex flex-col gap-1.5">
         <span className="text-sm font-medium">Escopo</span>
         <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-1.5 text-sm">
-            <input
-              type="radio"
-              name="escopo"
-              checked={escopo === 'CONDOMINIO'}
-              onChange={() => setEscopo('CONDOMINIO')}
-              data-testid="aviso-escopo-condominio"
-            />
-            Condomínio inteiro
-          </label>
-          <label className="flex items-center gap-1.5 text-sm">
-            <input
-              type="radio"
-              name="escopo"
-              checked={escopo === 'UNIDADE'}
-              onChange={() => setEscopo('UNIDADE')}
-              data-testid="aviso-escopo-unidade"
-            />
-            Unidade específica
-          </label>
+          <div className="flex flex-wrap gap-2">
+            <label className="cursor-pointer">
+              <input
+                type="radio"
+                name="escopo"
+                checked={escopo === 'CONDOMINIO'}
+                onChange={() => setEscopo('CONDOMINIO')}
+                data-testid="aviso-escopo-condominio"
+                className="peer sr-only"
+              />
+              <span
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full border border-input px-3 py-1.5 text-sm font-medium text-foreground/70 transition-colors',
+                  'peer-checked:border-primary/30 peer-checked:bg-primary/10 peer-checked:text-primary',
+                  'peer-focus-visible:ring-3 peer-focus-visible:ring-ring/50',
+                )}
+              >
+                <Building className="size-3.5" aria-hidden="true" />
+                Condomínio inteiro
+              </span>
+            </label>
+            <label className="cursor-pointer">
+              <input
+                type="radio"
+                name="escopo"
+                checked={escopo === 'UNIDADE'}
+                onChange={() => setEscopo('UNIDADE')}
+                data-testid="aviso-escopo-unidade"
+                className="peer sr-only"
+              />
+              <span
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full border border-input px-3 py-1.5 text-sm font-medium text-foreground/70 transition-colors',
+                  'peer-checked:border-primary/30 peer-checked:bg-primary/10 peer-checked:text-primary',
+                  'peer-focus-visible:ring-3 peer-focus-visible:ring-ring/50',
+                )}
+              >
+                <Users className="size-3.5" aria-hidden="true" />
+                Unidade específica
+              </span>
+            </label>
+          </div>
           {escopo === 'UNIDADE' && (
             <Input
               placeholder="ID da unidade"
@@ -160,7 +198,8 @@ export function AvisoForm({ condominioId, onCriado }: AvisoFormProps) {
         </div>
       </fieldset>
 
-      <Button type="submit" disabled={enviando} data-testid="aviso-submit">
+      <Button type="submit" disabled={enviando} data-testid="aviso-submit" className="gap-1.5">
+        <Send className="size-4" aria-hidden="true" />
         {enviando ? 'Enviando…' : 'Enviar aviso'}
       </Button>
     </form>

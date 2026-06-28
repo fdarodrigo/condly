@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { BellOff, BellRing, Check, PenSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ApiError, apiFetch } from '@/lib/api-client';
@@ -84,7 +85,10 @@ export function AvisosContent() {
     return (
       <Card className="max-w-lg">
         <CardHeader>
-          <CardTitle>Criar aviso</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <PenSquare className="size-4 text-muted-foreground" aria-hidden="true" />
+            Criar aviso
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <AvisoForm condominioId={condominioId} />
@@ -103,21 +107,37 @@ export function AvisosContent() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Avisos não lidos</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <BellRing className="size-4 text-muted-foreground" aria-hidden="true" />
+            Avisos não lidos
+            {avisos.length > 0 && (
+              <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[0.6875rem] font-semibold text-primary-foreground">
+                {avisos.length}
+              </span>
+            )}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {avisos.length === 0 ? (
-            <p className="text-sm text-muted-foreground" data-testid="avisos-sem-pendencia">
+            <div
+              className="flex flex-col items-center gap-2 py-8 text-center text-sm text-muted-foreground"
+              data-testid="avisos-sem-pendencia"
+            >
+              <BellOff className="size-6 text-muted-foreground/60" aria-hidden="true" />
               Nenhum aviso novo.
-            </p>
+            </div>
           ) : (
             <ul className="flex flex-col gap-2" data-testid="lista-avisos">
               {avisos.map((aviso) => (
                 <li
                   key={aviso.id}
                   data-testid="aviso-item"
-                  className="flex flex-col gap-2 rounded-lg border border-border px-3 py-2"
+                  className="relative flex flex-col gap-2 rounded-lg border border-primary/20 bg-primary/2 px-3 py-2.5 pl-4"
                 >
+                  <span
+                    className="absolute top-3.5 left-1.5 size-1.5 rounded-full bg-primary"
+                    aria-hidden="true"
+                  />
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex flex-col">
                       <span className="text-sm font-medium">{aviso.titulo}</span>
@@ -131,11 +151,13 @@ export function AvisosContent() {
                       disabled={marcandoId === aviso.id}
                       onClick={() => marcarComoLido(aviso.id)}
                       data-testid="aviso-marcar-lido"
+                      className="gap-1"
                     >
+                      <Check className="size-3.5" aria-hidden="true" />
                       {marcandoId === aviso.id ? 'Marcando…' : 'Marcar como lido'}
                     </Button>
                   </div>
-                  <p className="text-sm">{aviso.corpo}</p>
+                  <p className="text-sm text-foreground/80">{aviso.corpo}</p>
                 </li>
               ))}
             </ul>

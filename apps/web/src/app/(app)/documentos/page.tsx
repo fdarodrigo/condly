@@ -1,10 +1,16 @@
+import { FileText } from 'lucide-react';
+import { PageHeader } from '@/components/layout/page-header';
 import { RequireRole } from '@/components/layout/require-role';
 import { DocumentosContent } from './documentos-content';
 
 export default function DocumentosPage() {
   return (
     <RequireRole roles={['ADMINISTRADORA', 'SINDICO', 'CONDOMINO']}>
-      <h1 className="mb-6 text-xl font-semibold">Documentos</h1>
+      <PageHeader
+        icone={FileText}
+        titulo="Documentos"
+        descricao="Atas, prestações de contas e outros arquivos do condomínio."
+      />
       <DocumentosContent />
     </RequireRole>
   );

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { ExternalLink, FileText, UploadCloud } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -150,7 +151,10 @@ export function DocumentosContent() {
       {podeFazerUpload && (
         <Card className="max-w-lg">
           <CardHeader>
-            <CardTitle>Enviar documento</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <UploadCloud className="size-4 text-muted-foreground" aria-hidden="true" />
+              Enviar documento
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={aoEnviarUpload} className="flex flex-col gap-4">
@@ -170,7 +174,7 @@ export function DocumentosContent() {
                 <select
                   id="documento-visibilidade"
                   data-testid="documento-visibilidade"
-                  className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                  className="h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                   value={visibilidade}
                   onChange={(evento) =>
                     setVisibilidade(evento.target.value as 'TODOS' | 'SINDICO_ADMINISTRADORA')
@@ -182,16 +186,20 @@ export function DocumentosContent() {
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="documento-arquivo">Arquivo</Label>
-                <input
-                  id="documento-arquivo"
-                  type="file"
-                  accept={TIPOS_MIME_PERMITIDOS.join(',')}
-                  ref={inputArquivoRef}
-                  data-testid="documento-arquivo"
-                  className="text-sm"
-                />
+                <div className="rounded-lg border-2 border-dashed border-input bg-muted/30 px-3 py-3 transition-colors hover:border-primary/40">
+                  <input
+                    id="documento-arquivo"
+                    type="file"
+                    accept={TIPOS_MIME_PERMITIDOS.join(',')}
+                    ref={inputArquivoRef}
+                    data-testid="documento-arquivo"
+                    className="w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary"
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground">PDF, JPEG ou PNG.</span>
               </div>
-              <Button type="submit" disabled={enviando} data-testid="documento-enviar">
+              <Button type="submit" disabled={enviando} data-testid="documento-enviar" className="gap-1.5">
+                <UploadCloud className="size-4" aria-hidden="true" />
                 {enviando ? 'Enviando…' : 'Enviar documento'}
               </Button>
             </form>
@@ -201,7 +209,10 @@ export function DocumentosContent() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Documentos do condomínio</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
+            Documentos do condomínio
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {documentos.length === 0 ? (
@@ -212,13 +223,18 @@ export function DocumentosContent() {
                 <li
                   key={documento.id}
                   data-testid="documento-item"
-                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
+                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5 transition-colors hover:border-primary/30 hover:bg-primary/3"
                 >
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium">{documento.tipo}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatarData(documento.criadoEm)}
+                  <div className="flex items-center gap-3">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <FileText className="size-4" aria-hidden="true" />
                     </span>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium">{documento.tipo}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatarData(documento.criadoEm)}
+                      </span>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{LABEL_VISIBILIDADE[documento.visibilidade]}</Badge>
@@ -228,8 +244,16 @@ export function DocumentosContent() {
                       disabled={abrindoId === documento.id}
                       onClick={() => abrirDocumento(documento.id)}
                       data-testid="documento-abrir"
+                      className="gap-1"
                     >
-                      {abrindoId === documento.id ? 'Abrindo…' : 'Abrir'}
+                      {abrindoId === documento.id ? (
+                        'Abrindo…'
+                      ) : (
+                        <>
+                          Abrir
+                          <ExternalLink className="size-3.5" aria-hidden="true" />
+                        </>
+                      )}
                     </Button>
                   </div>
                 </li>

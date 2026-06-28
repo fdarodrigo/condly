@@ -806,6 +806,106 @@ condômino em `/minha-unidade`, sem nunca mostrar o placeholder antigo.
 Verificado manualmente com Playwright nos três casos (sem login,
 administradora logada, condômino logado).
 
+## Repaginação visual do frontend (pós-Prompt 10.7)
+Pedido explícito do usuário: estilizar a casca e as telas pra parecer
+"um produto completo, com UI bonita, nada revolucionário, mas que
+impressione e pareça tecnológico" — dentro da identidade visual já
+fixada (claro, sem dark mode, verde `#0F6E56`). Mudança só visual,
+nenhum comportamento/contrato de API alterado; todos os `data-testid`
+existentes foram preservados e os testes (15 no total) continuam
+passando sem alteração de asserção.
+- `globals.css`: o verde da marca deixou de viver só no wordmark e
+  passou a ser `--primary` real do tema (`--brand: #0f6e56`,
+  `--brand-strong: #0b5443` pra texto sobre fundo claro tingido) — todo
+  botão padrão, anel de foco (`--ring`), badge "ativo" e estado
+  selecionado usa a mesma cor, em vez do preto neutro padrão do
+  shadcn. `--background` passou de branco puro pra um cinza muito claro
+  (`oklch(0.97 ...)`), criando profundidade: sidebar e cards (que
+  continuam brancos) "flutuam" sobre o canvas em vez de tudo ficar no
+  mesmo tom. `--radius` aumentou de `0.625rem` pra `0.75rem` (cantos um
+  pouco mais arredondados, leitura mais "produto moderno"). `Card`
+  ganhou uma sombra sutil (`shadow-[...]`, dois-tons, suave) além do
+  `ring` que já tinha — é a mudança que dá a sensação de elevação em
+  toda tela do produto de uma vez, sem precisar tocar em cada página.
+- `Wordmark` ganhou uma marca (rounded square com ícone `Building2` em
+  fundo `bg-primary`) além do texto — vira o cabeçalho da própria
+  Sidebar agora (antes vivia na Topbar, repetido em todo lugar que a
+  usava). Prop `tamanho` (`'sm' | 'lg'`) substitui o controle antigo via
+  `className="text-2xl"` (que não tinha efeito sobre o tamanho da nova
+  marca-ícone).
+- `Sidebar`: ganhou ícone por item (`lucide-react`, já era dependência
+  do projeto desde o scaffold, nunca usada até agora), separação visual
+  entre o grupo principal e o grupo de vitrine (rótulo "EM BREVE" em
+  uppercase), e um indicador de item ativo com barra verde à esquerda +
+  fundo tingido (`--sidebar-accent`) — span absoluto com opacidade
+  condicional, não troca de layout entre estados ativo/inativo (evita
+  "pulo" de conteúdo). Item "Carteira" continua condicional só pra
+  ADMINISTRADORA (regra de negócio inalterada, ver decisão do Prompt
+  10.6); os 3 itens de vitrine continuam sempre visíveis pra qualquer
+  papel (regra do Prompt 10.7 também inalterada).
+- `Topbar`: não mostra mais o wordmark (mudou pra Sidebar) — agora é só
+  contexto da sessão: badge do papel principal do usuário logado (novo
+  helper `papelPrincipal(vinculos)` em `lib/auth.ts`, mesmo padrão UX-
+  only dos outros helpers ali, já que o JWT não traz nome/e-mail) e o
+  botão "Sair" com ícone. `sticky top-0` com leve blur (`backdrop-blur-
+  sm` + fundo translúcido) pra continuar visível ao rolar uma lista
+  longa.
+- Novo `components/layout/page-header.tsx` (`PageHeader`): ícone num
+  círculo tingido + título + descrição opcional, substitui os `<h1>`
+  soltos que cada página tinha. Usado pelas 6 páginas "reais"
+  (`/dashboard`, `/minha-unidade`, `/reservas`, `/documentos`,
+  `/avisos`, `/administradora/dashboard`) — as 3 páginas de vitrine
+  (Prompt 10.7) deliberadamente NÃO usam `PageHeader`: antes da
+  repaginação elas já duplicavam o título (um `<h1>` solto E o `título`
+  dentro do próprio `PreviewPlaceholder`); a correção foi remover o
+  `<h1>` duplicado e deixar o `PreviewPlaceholder`, agora maior e
+  centralizado verticalmente (`min-h-[70vh]`), ser o único elemento da
+  página — reforça visualmente que aquela tela é "diferente" (uma
+  prévia), não mais uma página funcional com um header padrão.
+- Novo `components/layout/stat-card.tsx` (`StatCard`): ícone + label +
+  valor em destaque (fonte mono, a mesma já configurada em
+  `--font-mono`/Geist Mono desde o scaffold, nunca usada até agora) —
+  reusado pelos dois dashboards (`dashboard-content.tsx` e
+  `administradora-dashboard-content.tsx`) pros números de "a receber",
+  "recebido" e "chamados abertos na carteira". Números financeiros e
+  contagens em monospace foi a escolha deliberada pra reforçar a leitura
+  "técnica/dashboard de dados" pedida.
+- `PreviewPlaceholder` ganhou borda tracejada (reforça "é uma prévia
+  proposital", não site quebrado) e o selo "Em breve" ganhou um ícone
+  `Sparkles` — único ajuste visual, a API do componente (props
+  `icone`/`titulo`/`descricao`, testids `preview-placeholder`/
+  `preview-em-breve`) não mudou, então o teste de componente já
+  existente (`preview-placeholder.test.tsx`) continua passando sem
+  alteração.
+- `aviso-form.tsx`: checkboxes de canal e radios de escopo deixaram de
+  ser inputs nativos visíveis e passaram a ser "chips" — o input nativo
+  continua no DOM (classe `sr-only`, nunca `display:none`, pra
+  `userEvent.click`/`.type` continuarem funcionando exatamente como
+  antes) com um `<span>` irmão estilizado via `peer-checked:` refletindo
+  o estado. Mesmos `data-testid`s nos próprios `<input>`s
+  (`aviso-canal-app` etc.) — o teste de componente
+  (`aviso-form.test.tsx`) não precisou de nenhuma alteração.
+- `documentos-content.tsx`: zona de upload virou uma caixa tracejada
+  (mesma linguagem visual do "preview" usado nas telas de vitrine, aqui
+  significando "solte/escolha um arquivo aqui") com o botão nativo do
+  input estilizado via `file:` (Tailwind) — sem trocar o `<input
+  type="file">` por um componente de drag-and-drop de verdade
+  (`nada revolucionário`); cada documento da lista ganhou um ícone de
+  arquivo num círculo tingido, mesma linguagem visual do resto.
+- Login (`app/login/page.tsx`): fundo com dois "blobs" radiais verdes
+  bem sutis (`blur-3xl`, baixa opacidade) atrás do card central — único
+  toque "decorativo" de toda a repaginação, mantido discreto de
+  propósito (`nada revolucionário`). `LoginForm` ganhou ícones
+  (`Mail`/`Lock`) dentro dos campos e `LogIn` no botão — mesmos
+  `data-testid`s, `login-form.test.tsx` não precisou de alteração.
+- Validação: `tsc --noEmit`, `next lint` e os 15 testes de componente
+  (Vitest) continuam passando sem nenhuma alteração de asserção — só
+  classe/estrutura de apresentação mudou. Conferido visualmente com
+  Playwright contra o servidor de dev, logado como cada um dos 3 papéis
+  (síndico, condômino, administradora), cobrindo as 9 telas
+  autenticadas + a tela de login, sem nenhum erro de runtime
+  (`page.on('pageerror')` vazio em todas).
+
 ## Definição de "pronto"
 Uma tarefa só está concluída quando: os testes relevantes passam,
 não há erro de tipo, o lint está limpo, e — se a mudança tocou em

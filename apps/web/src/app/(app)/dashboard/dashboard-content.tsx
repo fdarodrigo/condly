@@ -1,11 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { AlertTriangle, ClipboardList, TrendingUp, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { StatCard } from '@/components/layout/stat-card';
 import { ApiError, apiFetch } from '@/lib/api-client';
 import { obterVinculos, temPapel } from '@/lib/auth';
 import { COR_STATUS_CHAMADO, LABEL_STATUS_CHAMADO, formatarData, formatarMoeda } from '@/lib/status-labels';
@@ -102,50 +104,56 @@ export function DashboardContent() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard
+          icone={Wallet}
+          label="A receber no mês"
+          valor={formatarMoeda(resumo?.totalAReceberNoMes ?? 0)}
+          dataTestId="resumo-a-receber"
+        />
+        <StatCard
+          icone={TrendingUp}
+          label="Recebido no mês"
+          valor={formatarMoeda(resumo?.totalRecebido ?? 0)}
+          tom="success"
+          dataTestId="resumo-recebido"
+        />
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">A receber no mês</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold" data-testid="resumo-a-receber">
-            {formatarMoeda(resumo?.totalAReceberNoMes ?? 0)}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">Recebido no mês</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold" data-testid="resumo-recebido">
-            {formatarMoeda(resumo?.totalRecebido ?? 0)}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">Unidades inadimplentes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {resumo?.unidadesInadimplentes.length ? (
-              <ul className="flex flex-col gap-1 text-sm">
-                {resumo.unidadesInadimplentes.map((unidade) => (
-                  <li key={unidade.unidadeId}>
-                    Unidade {unidade.identificador ?? unidade.unidadeId} — {unidade.diasAtraso} dia(s)
-                    de atraso
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">Nenhuma unidade inadimplente.</p>
-            )}
+          <CardContent className="flex items-start gap-3 px-5 py-4">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
+              <AlertTriangle className="size-5" aria-hidden="true" />
+            </span>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">Unidades inadimplentes</span>
+              {resumo?.unidadesInadimplentes.length ? (
+                <ul className="flex flex-col gap-0.5 text-sm">
+                  {resumo.unidadesInadimplentes.map((unidade) => (
+                    <li key={unidade.unidadeId}>
+                      Unidade {unidade.identificador ?? unidade.unidadeId} — {unidade.diasAtraso}{' '}
+                      dia(s) de atraso
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <span className="font-mono text-xl font-semibold tracking-tight text-foreground">0</span>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Chamados</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <ClipboardList className="size-4 text-muted-foreground" aria-hidden="true" />
+            Chamados
+          </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {podeAbrirChamado && (
-            <form onSubmit={aoAbrirChamado} className="flex flex-wrap items-end gap-2">
+            <form
+              onSubmit={aoAbrirChamado}
+              className="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-muted/40 p-3"
+            >
               <div className="flex flex-1 flex-col gap-1.5">
                 <Label htmlFor="categoria">Abrir novo chamado</Label>
                 <Input
@@ -171,7 +179,7 @@ export function DashboardContent() {
                 <li
                   key={chamado.id}
                   data-testid="chamado-item"
-                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
+                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5 transition-colors hover:border-primary/30 hover:bg-primary/3"
                 >
                   <div className="flex flex-col">
                     <span className="text-sm font-medium">{chamado.categoria}</span>
