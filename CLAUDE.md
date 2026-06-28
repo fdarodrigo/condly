@@ -749,6 +749,50 @@ ignorar silenciosamente:
   `/administradora/dashboard` visíveis só pra administradora, com os
   totais agregados da carteira renderizados corretamente.
 
+## Decisões de escopo das telas de vitrine (Prompt 10.7)
+- `Perfil`, `Configurações do bot no WhatsApp` e `Relatórios` são telas
+  puramente estáticas — sem nenhum hook de dados (`useEffect`/
+  `apiFetch`), sem estado, sem formulário. Compartilham um único
+  componente (`components/layout/preview-placeholder.tsx`,
+  `PreviewPlaceholder`) que recebe `icone`/`titulo`/`descricao` — extraído
+  porque as três páginas são literalmente o mesmo layout (ícone num
+  círculo + título + frase + selo), ao contrário das outras telas do
+  produto, que sempre diferem o suficiente pra não valer a pena uma
+  abstração.
+- O selo "Em breve" (`Badge variant="outline"`, `data-testid=
+  "preview-em-breve"`) é o único elemento, além do texto da frase, que
+  sinaliza "prévia" — deliberadamente não um banner de aviso/cor de
+  alerta (isso pareceria erro), nem um ícone de "em construção" (clichê
+  visual de site quebrado). Mesma paleta clara do resto do produto.
+- Rotas escolhidas (`/perfil`, `/bot-whatsapp`, `/relatorios`) não
+  aparecem no prompt literalmente — só os rótulos da navegação aparecem
+  ("Perfil", "Configurações do bot no WhatsApp", "Relatórios"). Path
+  curto e sem acento pra cada uma, seguindo o padrão já usado nas rotas
+  existentes (`/dashboard`, `/reservas` etc.); o rótulo completo do
+  prompt fica só no texto visível (label da navegação e `<h1>` da
+  página), nunca no path.
+- As três entradas aparecem pra qualquer papel autenticado, sem
+  `RequireRole` — ao contrário do link "Carteira" do Prompt 10.6 (que é
+  condicional, porque levaria a uma página que rejeita quem não é
+  ADMINISTRADORA), aqui não existe nenhuma regra de negócio associada
+  a papel: são vitrine de produto completo, não uma função real
+  restrita. Renderizar incondicionalmente pra todo papel é coerente com
+  a própria intenção do prompt ("a navegação lateral parece a de um
+  produto completo").
+- `data-testid` da navegação deixou de ser derivado de
+  `item.label.toLowerCase()` (que pra "Configurações do bot no
+  WhatsApp" geraria um id com espaços e acentos, ruim pra seletor de
+  teste) e passou a ser um campo `testId` explícito por item
+  (`components/layout/sidebar.tsx`) — sem mudança de comportamento pros
+  itens antigos (`nav-dashboard`, `nav-reservas` etc. continuam iguais).
+- Verificado manualmente contra o servidor de dev (síndico logado):
+  nenhuma das três páginas faz nenhuma requisição pra
+  `http://localhost:3001` (API), confirmado interceptando os eventos de
+  `request` do Playwright durante a navegação — garante que a
+  instrução "sem nenhuma chamada de API" não regrida silenciosamente se
+  alguém futuramente "completar" uma dessas telas sem atualizar este
+  documento.
+
 ## Definição de "pronto"
 Uma tarefa só está concluída quando: os testes relevantes passam,
 não há erro de tipo, o lint está limpo, e — se a mudança tocou em

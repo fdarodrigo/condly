@@ -7,15 +7,28 @@ import { cn } from '@/lib/utils';
 import { obterVinculos, temPapel } from '@/lib/auth';
 
 const ITENS_NAVEGACAO = [
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/reservas', label: 'Reservas' },
-  { href: '/documentos', label: 'Documentos' },
-  { href: '/avisos', label: 'Avisos' },
+  { href: '/dashboard', label: 'Dashboard', testId: 'dashboard' },
+  { href: '/reservas', label: 'Reservas', testId: 'reservas' },
+  { href: '/documentos', label: 'Documentos', testId: 'documentos' },
+  { href: '/avisos', label: 'Avisos', testId: 'avisos' },
+  // Telas de vitrine (Prompt 10.7): sem chamada de API, só pra mostrar a
+  // amplitude do produto numa demonstração — ver PreviewPlaceholder.
+  { href: '/perfil', label: 'Perfil', testId: 'perfil' },
+  {
+    href: '/bot-whatsapp',
+    label: 'Configurações do bot no WhatsApp',
+    testId: 'bot-whatsapp',
+  },
+  { href: '/relatorios', label: 'Relatórios', testId: 'relatorios' },
 ];
 
 // Visível só pra ADMINISTRADORA — nem SINDICO de um dos condomínios da
 // carteira acessa essa visão agregada (CLAUDE.md, decisões do dashboard).
-const ITEM_DASHBOARD_ADMINISTRADORA = { href: '/administradora/dashboard', label: 'Carteira' };
+const ITEM_DASHBOARD_ADMINISTRADORA = {
+  href: '/administradora/dashboard',
+  label: 'Carteira',
+  testId: 'carteira',
+};
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -39,7 +52,7 @@ export function Sidebar() {
             <li key={item.href}>
               <Link
                 href={item.href}
-                data-testid={`nav-${item.label.toLowerCase()}`}
+                data-testid={`nav-${item.testId}`}
                 className={cn(
                   'block rounded-lg px-3 py-2 text-sm font-medium text-foreground/80 hover:bg-muted',
                   ativo && 'bg-muted text-foreground',
