@@ -793,6 +793,19 @@ ignorar silenciosamente:
   alguém futuramente "completar" uma dessas telas sem atualizar este
   documento.
 
+## Correção da rota raiz `/` (pós-Prompt 10.7)
+`app/page.tsx` (raiz, fora do grupo `(app)`) nunca tinha sido tocado
+desde o scaffold do Prompt 0 — continuava mostrando "Condly — em
+construção" mesmo depois de `/login` e todo o resto existir, porque os
+Prompts 10.5–10.7 só criaram rotas novas, nenhum removeu/redirecionou a
+home. Corrigido pra um componente client que decide em `useEffect`:
+sem `accessToken`, redireciona pra `/login`; com token, redireciona pra
+`rotaInicialParaVinculos(obterVinculos())` (mesma função já usada pelo
+`LoginForm`) — então administradora/síndico caem em `/dashboard` e
+condômino em `/minha-unidade`, sem nunca mostrar o placeholder antigo.
+Verificado manualmente com Playwright nos três casos (sem login,
+administradora logada, condômino logado).
+
 ## Definição de "pronto"
 Uma tarefa só está concluída quando: os testes relevantes passam,
 não há erro de tipo, o lint está limpo, e — se a mudança tocou em

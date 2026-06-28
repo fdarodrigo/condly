@@ -1,7 +1,22 @@
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { obterAccessToken, obterVinculos, rotaInicialParaVinculos } from '@/lib/auth';
+
+// Raiz nunca teve conteúdo próprio (era o placeholder do Prompt 0) — só
+// decide pra onde ir: /login sem token, ou a home do papel já logado.
 export default function Home() {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-2">
-      <h1 className="text-3xl font-bold">Condly — em construção</h1>
-    </main>
-  );
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = obterAccessToken();
+    if (!token) {
+      router.replace('/login');
+      return;
+    }
+    router.replace(rotaInicialParaVinculos(obterVinculos()));
+  }, [router]);
+
+  return null;
 }
