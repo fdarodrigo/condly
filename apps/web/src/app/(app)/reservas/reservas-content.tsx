@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Clock, Lock, MapPin } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -117,7 +118,7 @@ export function ReservasContent() {
         )}
         {mensagem && (
           <div
-            className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700"
+            className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400"
             data-testid="reservas-mensagem"
           >
             <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
@@ -163,25 +164,33 @@ export function ReservasContent() {
               {disponibilidade.ocupados.map((intervalo) => (
                 <li
                   key={`ocupado-${intervalo.inicio}`}
-                  className="flex items-center justify-between rounded-lg border border-border bg-muted/60 px-3 py-2 text-sm text-muted-foreground"
+                  className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
                 >
-                  <span className="flex items-center gap-1.5">
-                    <Clock className="size-3.5" aria-hidden="true" />
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+                    <Clock className="size-4" aria-hidden="true" />
+                  </span>
+                  <span className="flex-1 text-sm font-medium text-muted-foreground">
                     {formatarHora(intervalo.inicio)} – {formatarHora(intervalo.fim)}
                   </span>
-                  <span className="flex items-center gap-1 text-xs" data-testid="horario-reservado">
+                  <Badge
+                    variant="outline"
+                    className="gap-1 border-destructive/30 bg-destructive/15 text-destructive"
+                    data-testid="horario-reservado"
+                  >
                     <Lock className="size-3" aria-hidden="true" />
                     Reservado
-                  </span>
+                  </Badge>
                 </li>
               ))}
               {disponibilidade.livres.map((intervalo) => (
                 <li
                   key={`livre-${intervalo.inicio}`}
-                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm transition-colors hover:border-primary/30 hover:bg-primary/3"
+                  className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 transition-colors hover:border-primary/30 hover:bg-primary/3"
                 >
-                  <span className="flex items-center gap-1.5">
-                    <Clock className="size-3.5 text-primary" aria-hidden="true" />
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Clock className="size-4" aria-hidden="true" />
+                  </span>
+                  <span className="flex-1 text-sm font-medium">
                     {formatarHora(intervalo.inicio)} – {formatarHora(intervalo.fim)}
                   </span>
                   <Button

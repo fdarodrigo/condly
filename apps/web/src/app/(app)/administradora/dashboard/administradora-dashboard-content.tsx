@@ -124,7 +124,7 @@ export function AdministradoraDashboardContent() {
                     <div className="flex flex-1 flex-col gap-1">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm font-medium">{linha.nome}</span>
-                        <span className="font-mono text-sm font-semibold text-foreground">
+                        <span className="font-display text-sm font-semibold text-foreground">
                           {formatarTaxa(linha.taxaArrecadacao)}
                         </span>
                       </div>
@@ -162,7 +162,7 @@ export function AdministradoraDashboardContent() {
                   >
                     <RankBadge posicao={indice + 1} />
                     <span className="flex-1 text-sm font-medium">{linha.nome}</span>
-                    <span className="font-mono text-sm font-semibold text-destructive">
+                    <span className="font-display text-sm font-semibold text-destructive">
                       {formatarMoeda(linha.totalEmAtraso)}
                     </span>
                   </li>
@@ -193,7 +193,7 @@ export function AdministradoraDashboardContent() {
                 >
                   <RankBadge posicao={indice + 1} />
                   <span className="flex-1 text-sm font-medium">{linha.nome}</span>
-                  <span className="flex size-7 items-center justify-center rounded-full bg-destructive/10 font-mono text-xs font-semibold text-destructive">
+                  <span className="flex size-7 items-center justify-center rounded-full bg-destructive/10 font-display text-xs font-semibold text-destructive">
                     {linha.chamadosPendentes}
                   </span>
                 </li>

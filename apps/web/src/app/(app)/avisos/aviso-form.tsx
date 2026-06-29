@@ -82,7 +82,7 @@ export function AvisoForm({ condominioId, onCriado }: AvisoFormProps) {
         </p>
       )}
       {mensagem && (
-        <p className="flex items-center gap-1.5 text-sm text-emerald-700" data-testid="aviso-form-mensagem">
+        <p className="flex items-center gap-1.5 text-sm text-emerald-400" data-testid="aviso-form-mensagem">
           <Send className="size-3.5" aria-hidden="true" />
           {mensagem}
         </p>

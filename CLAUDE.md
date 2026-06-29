@@ -906,6 +906,144 @@ passando sem alteração de asserção.
   autenticadas + a tela de login, sem nenhum erro de runtime
   (`page.on('pageerror')` vazio em todas).
 
+## Importação de design escuro via Claude Design (pós-repaginação visual)
+Pedido explícito do usuário: importar o design concept "Condly App.dc.html"
+(projeto "Condly PWA para condomínios" no Claude Design, lido via tool
+`DesignSync`/`get_file`) e aplicá-lo "exatamente como especificado",
+preservando toda lógica/chamadas de API das páginas já existentes (login,
+dashboard, minha-unidade, reservas, documentos, avisos, carteira).
+
+**Decisão deliberada que reverte a identidade visual anterior**: o design
+importado é inteiramente em tema escuro (`#0B0D11` fundo de página, `#14181F`
+cards, texto `#E6E9EF`, verde `#1FB389`→`#0E7F60` em gradiente). Isso
+contradiz a decisão "claro fixo, sem dark mode" registrada nas seções
+anteriores deste arquivo (repaginação visual pós-Prompt 10.7 e decisões de
+frontend do Prompt 10.5). Apresentei o conflito ao usuário antes de tocar em
+qualquer código; a resposta explícita foi adotar o tema escuro do design,
+substituindo (não complementando) a paleta clara — **não existe alternância
+clara/escuro**, é uma troca de paleta única, mesmo espírito de "tema fixo" de
+antes, só invertido. Toda menção a "claro fixo"/"sem dark mode" nas seções
+anteriores deste arquivo está desatualizada por esta decisão; não removi o
+texto histórico (documenta por que o código tinha aquela forma até aqui), mas
+o estado atual do produto é escuro fixo.
+
+**Cobertura do design importado, e o que foi extrapolado**: o arquivo
+`.dc.html` é um protótipo interativo cuja IA de sidebar (Dashboard,
+Financeiro, Moradores, Reservas, Manutenção, Comunicados, Assembleias,
+Portaria, Relatórios) não corresponde 1:1 às páginas reais do produto. Só
+Dashboard e Reservas têm telas de fato desenhadas no arquivo — Financeiro,
+Moradores e Manutenção (Kanban) não existem no produto real (sem backend
+correspondente) e foram ignoradas; Documentos, Comunicados, Assembleias,
+Portaria e Relatórios aparecem todos como o MESMO placeholder genérico no
+design ("Módulo planejado para a próxima etapa"), e login/minha-unidade/
+avisos/carteira não aparecem em nenhuma tela do arquivo. Decisão confirmada
+com o usuário: aplicar a linguagem visual do design 1:1 nas duas páginas que
+ele de fato cobre (dashboard do síndico, reservas), e estender a mesma
+linguagem (cores, tipografia, padrão de card/badge/ícone) por conta própria
+nas páginas que o design não desenhou (login, minha-unidade, documentos,
+avisos, carteira da administradora, telas de vitrine) — nenhuma tela ficou
+sem retrabalho, mas só duas seguem o mockup literal porque só duas tinham
+mockup.
+- `globals.css`: tokens recriados em hexadecimal/rgba (abandonado o
+  `oklch`/`color-mix` em espaço oklch da paleta clara anterior — mais simples
+  manter a paleta escura literal do design do que recalcular em oklch).
+  `--brand`/`--brand-strong`/`--brand-foreground` agora são o verde do
+  design (`#1FB389`/`#0E7F60`/`#06120E`, este último o texto escuro usado
+  sobre o gradiente verde nos botões primários, não branco). `--radius`
+  subiu pra `0.875rem`. Removida a classe `.dark` inteira (não há mais
+  alternância — o tema escuro é o único `:root`); a diretiva
+  `@custom-variant dark` foi mantida (inofensiva, só não é mais alcançada
+  por nenhuma troca de classe) pra não quebrar utilitários `dark:` ainda
+  presentes nos primitivos shadcn gerados.
+- Tipografia trocada de Geist (fonte local, `next/font/local`) pra Plus
+  Jakarta Sans + Space Grotesk (Google Fonts, ambas via `next/font/google`
+  — self-hosted em build, sem chamada de rede em runtime, importante pro
+  PWA funcionar offline) — exigência literal do design (`helmet` do
+  `.dc.html` carregava as duas via Google Fonts CDN). Novo token
+  `--font-display` (Space Grotesk) substitui o uso de `--font-mono`/Geist
+  Mono pra números em destaque (`StatCard`, saldo do condômino, ranking da
+  administradora, contagem de chamados) — o design usa Space Grotesk pros
+  números-chave, não uma fonte monoespaçada; todo `font-mono` desses
+  contextos foi trocado pra `font-display`. `--font-mono` deixou de ser
+  mapeado em `@theme inline` (nenhum uso restante).
+- `Card` perdeu o `ring` + sombra em tom escuro-sobre-claro da repaginação
+  anterior (`rgba(15,23,42,...)`, pensada pra fundo branco) e ganhou
+  `border border-border` (a cor de borda agora é só `rgba(255,255,255,.08)`,
+  igual ao design) + sombra recalculada em preto (`rgba(0,0,0,...)`, dá
+  profundidade sobre fundo escuro em vez de sobre fundo claro).
+- `Button` variant `default` ganhou o tratamento exato do design pro CTA
+  primário: gradiente `from-brand to-brand-strong`, texto `font-semibold`
+  cor `--brand-foreground` (escuro, não branco) e `shadow-[...]` verde —
+  antes era um simples `bg-primary` sólido.
+- `Wordmark`: ícone trocado de `Building2` pra `Home` (mais perto do
+  glifo de "casa" usado no `.dc.html`), fundo do ícone virou gradiente
+  (`from-brand to-brand-strong`) com sombra verde, e o texto "ly" deixou de
+  ser colorido separadamente — no design o wordmark é uma cor só
+  (`#E6E9EF`), a marca/distinção fica inteira no ícone.
+- `Sidebar`: grupo principal ganhou rótulo "PRINCIPAL" (antes só o grupo de
+  vitrine tinha rótulo) — agora os dois grupos seguem o mesmo padrão visual
+  do design (rótulo uppercase, `tracking` largo, cor apagada). Indicador de
+  item ativo trocado de uma barra absoluta posicionada em `inset-y` (gambiarra
+  de antes pra evitar "pulo" de layout) pra `shadow-[inset_3px_0_0_var(--brand)]`
+  (inset box-shadow não afeta layout, então o problema que a barra absoluta
+  resolvia nem existe mais com essa técnica) — efeito visual idêntico ao
+  "barra verde + fundo tingido" do design.
+- `lib/status-labels.ts`: `COR_STATUS_CHAMADO`/`COR_STATUS_COBRANCA`
+  recriados — eram pílulas claras (`bg-amber-100 text-amber-800
+  border-amber-200`, pensadas pra fundo branco) e ficariam ilegíveis/
+  destoantes sobre fundo escuro; agora são translúcidas sobre o fundo escuro
+  (`bg-amber-500/15 text-amber-400 border-amber-500/30`), mesmo padrão de
+  pílula de status usado no design (cor saturada de texto + fundo do mesmo
+  tom em baixa opacidade). Novo export `PONTO_STATUS_CHAMADO` (cor sólida,
+  só pro indicador/bolinha ao lado de cada chamado na listagem do
+  dashboard — uma pílula translúcida fica invisível num elemento de 8px).
+  Toda cor hardcoded assumindo fundo claro (`text-emerald-700`,
+  `text-emerald-600`, `bg-white/70`, `bg-white/80`) foi trocada pro
+  equivalente em tom claro-sobre-escuro (`text-emerald-400`, `bg-card/70`,
+  `bg-background/80`).
+- `reservas-content.tsx`: lista de horários do dia reestilizada pro padrão
+  "ícone num círculo tingido + label + pílula/botão" igual à seção
+  "Disponibilidade hoje" do design (antes era uma linha de texto simples com
+  badge). O resto da página (formulário com `<select>` nativo de área comum
+  e `<input type="date">` nativo) foi mantido sem alteração estrutural — ver
+  decisão já registrada acima (Prompt 10.5) sobre por que esses dois campos
+  são nativos, não um calendário customizado: a justificativa (Playwright
+  dirige um `<select>`/`<input type="date">` nativo trivialmente) continua
+  válida mesmo com o design tendo uma grade de calendário completa; replicar
+  a grade exigiria abandonar essa decisão sem necessidade.
+- `dashboard-content.tsx`: os 3 stat cards (a receber, recebido, unidades
+  inadimplentes) e a lista de chamados foram reestilizados pro padrão exato
+  do design (label uppercase pequeno + ícone tingido no topo do card, valor
+  grande em `font-display` abaixo — card de chamado com bolinha de status à
+  esquerda) **sem inventar dado nenhum**: o design mostra badges de
+  tendência (`▲ 4,2%` etc.) e um gráfico de receitas/despesas que dependem
+  de série histórica/categorização que a API não expõe — foram
+  deliberadamente omitidos em vez de fabricados, porque mostrar uma
+  tendência ou categoria de despesa que não vem de dado real violaria a
+  instrução do próprio usuário de preservar a lógica/dados existentes.
+- `StatCard` ganhou prop opcional `descricao` (subtexto abaixo do valor,
+  mudança aditiva, nenhum call site existente quebrou) e o layout interno
+  mudou de "ícone à esquerda, texto à direita" pra "label+ícone no topo,
+  valor grande abaixo" — mesma composição do design.
+- Páginas não cobertas pelo design (`minha-unidade`, `documentos`, `avisos`
+  + `aviso-form`, `administradora-dashboard-content`, as 3 telas de
+  vitrine) não precisaram de reescrita estrutural: já usavam só tokens
+  semânticos (`bg-primary`, `text-muted-foreground`, `border-border` etc.)
+  da repaginação anterior, então herdaram a paleta escura automaticamente
+  ao trocar `globals.css` — só as cores hardcoded listadas acima (emerald/
+  white) precisaram de ajuste manual.
+- Validação: os 15 testes de componente (Vitest), `tsc --noEmit` e
+  `next lint` continuam passando sem nenhuma alteração de asserção — só
+  classe/estrutura de apresentação mudou, nenhum `data-testid` foi
+  removido/renomeado. Conferido visualmente com Playwright contra um
+  servidor de dev novo (porta livre, sem derrubar os servidores que o
+  usuário já tinha rodando), logado como cada um dos 3 papéis, cobrindo
+  login + as 9 telas autenticadas, sem erro de runtime. Confirmação
+  incidental durante a verificação: `/reservas` é deliberadamente
+  `RequireRole roles={['CONDOMINO']}` (decisão já registrada no Prompt
+  10.5) — testar essa rota logado como síndico redireciona pro dashboard
+  por design, não é regressão desta mudança.
+
 ## Definição de "pronto"
 Uma tarefa só está concluída quando: os testes relevantes passam,
 não há erro de tipo, o lint está limpo, e — se a mudança tocou em

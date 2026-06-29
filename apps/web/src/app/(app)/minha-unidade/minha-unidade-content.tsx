@@ -66,7 +66,7 @@ export function MinhaUnidadeContent() {
         <CardContent className="flex flex-col gap-4">
           {!cobranca ? (
             <div
-              className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-700"
+              className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-400"
               data-testid="saldo-sem-pendencia"
             >
               <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
@@ -76,7 +76,7 @@ export function MinhaUnidadeContent() {
             <>
               <div className="flex items-center justify-between">
                 <span
-                  className="font-mono text-3xl font-semibold tracking-tight text-foreground"
+                  className="font-display text-3xl font-semibold tracking-tight text-foreground"
                   data-testid="saldo-valor"
                 >
                   {formatarMoeda(cobranca.valor)}

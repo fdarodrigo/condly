@@ -10,7 +10,14 @@ import { Label } from '@/components/ui/label';
 import { StatCard } from '@/components/layout/stat-card';
 import { ApiError, apiFetch } from '@/lib/api-client';
 import { obterVinculos, temPapel } from '@/lib/auth';
-import { COR_STATUS_CHAMADO, LABEL_STATUS_CHAMADO, formatarData, formatarMoeda } from '@/lib/status-labels';
+import { cn } from '@/lib/utils';
+import {
+  COR_STATUS_CHAMADO,
+  LABEL_STATUS_CHAMADO,
+  PONTO_STATUS_CHAMADO,
+  formatarData,
+  formatarMoeda,
+} from '@/lib/status-labels';
 
 interface ResumoFinanceiro {
   totalAReceberNoMes: number;
@@ -118,25 +125,27 @@ export function DashboardContent() {
           dataTestId="resumo-recebido"
         />
         <Card>
-          <CardContent className="flex items-start gap-3 px-5 py-4">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
-              <AlertTriangle className="size-5" aria-hidden="true" />
-            </span>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Unidades inadimplentes</span>
-              {resumo?.unidadesInadimplentes.length ? (
-                <ul className="flex flex-col gap-0.5 text-sm">
-                  {resumo.unidadesInadimplentes.map((unidade) => (
-                    <li key={unidade.unidadeId}>
-                      Unidade {unidade.identificador ?? unidade.unidadeId} — {unidade.diasAtraso}{' '}
-                      dia(s) de atraso
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <span className="font-mono text-xl font-semibold tracking-tight text-foreground">0</span>
-              )}
+          <CardContent className="flex flex-col gap-3 px-5 py-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[0.6875rem] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+                Unidades inadimplentes
+              </span>
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+                <AlertTriangle className="size-4" aria-hidden="true" />
+              </span>
             </div>
+            {resumo?.unidadesInadimplentes.length ? (
+              <ul className="flex flex-col gap-1 text-sm text-foreground/90">
+                {resumo.unidadesInadimplentes.map((unidade) => (
+                  <li key={unidade.unidadeId}>
+                    Unidade {unidade.identificador ?? unidade.unidadeId} — {unidade.diasAtraso}{' '}
+                    dia(s) de atraso
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <span className="font-display text-2xl font-semibold tracking-tight text-foreground">0</span>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -179,9 +188,13 @@ export function DashboardContent() {
                 <li
                   key={chamado.id}
                   data-testid="chamado-item"
-                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5 transition-colors hover:border-primary/30 hover:bg-primary/3"
+                  className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5 transition-colors hover:border-primary/30 hover:bg-primary/3"
                 >
-                  <div className="flex flex-col">
+                  <span
+                    className={cn('size-2 shrink-0 rounded-full', PONTO_STATUS_CHAMADO[chamado.status])}
+                    aria-hidden="true"
+                  />
+                  <div className="flex flex-1 flex-col">
                     <span className="text-sm font-medium">{chamado.categoria}</span>
                     <span className="text-xs text-muted-foreground">
                       {formatarData(chamado.criadoEm)}

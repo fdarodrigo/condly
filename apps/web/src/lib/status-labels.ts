@@ -6,10 +6,20 @@ export const LABEL_STATUS_CHAMADO: Record<string, string> = {
 };
 
 export const COR_STATUS_CHAMADO: Record<string, string> = {
-  PENDENTE_TRIAGEM: 'bg-amber-100 text-amber-800 border-amber-200',
-  ABERTO: 'bg-blue-100 text-blue-800 border-blue-200',
-  EM_ANDAMENTO: 'bg-violet-100 text-violet-800 border-violet-200',
-  RESOLVIDO: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  PENDENTE_TRIAGEM: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  ABERTO: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
+  EM_ANDAMENTO: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+  RESOLVIDO: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+};
+
+// Cor sólida só pro indicador (bolinha) ao lado de cada chamado na
+// listagem — mesmo mapeamento de status de COR_STATUS_CHAMADO, mas sem
+// transparência (o dot é pequeno demais pra um tom translúcido aparecer).
+export const PONTO_STATUS_CHAMADO: Record<string, string> = {
+  PENDENTE_TRIAGEM: 'bg-amber-400',
+  ABERTO: 'bg-sky-400',
+  EM_ANDAMENTO: 'bg-violet-400',
+  RESOLVIDO: 'bg-emerald-400',
 };
 
 export const LABEL_STATUS_COBRANCA: Record<string, string> = {
@@ -20,10 +30,10 @@ export const LABEL_STATUS_COBRANCA: Record<string, string> = {
 };
 
 export const COR_STATUS_COBRANCA: Record<string, string> = {
-  PENDENTE: 'bg-amber-100 text-amber-800 border-amber-200',
-  PAGO: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  ATRASADO: 'bg-red-100 text-red-800 border-red-200',
-  EM_ACORDO: 'bg-blue-100 text-blue-800 border-blue-200',
+  PENDENTE: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  PAGO: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+  ATRASADO: 'bg-destructive/15 text-destructive border-destructive/30',
+  EM_ACORDO: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
 };
 
 export function formatarMoeda(valor: number | string): string {

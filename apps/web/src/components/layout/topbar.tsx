@@ -24,11 +24,11 @@ export function Topbar() {
   }
 
   return (
-    <header className="sticky top-0 z-10 flex h-14 items-center justify-end gap-3 border-b border-border bg-white/80 px-6 backdrop-blur-sm">
+    <header className="sticky top-0 z-10 flex h-17 items-center justify-end gap-3 border-b border-border bg-background/80 px-6 backdrop-blur-sm">
       {papel && (
         <Badge
           variant="outline"
-          className="border-primary/20 bg-primary/5 text-primary"
+          className="border-primary/25 bg-primary/10 text-primary"
           data-testid="badge-papel"
         >
           {papel}

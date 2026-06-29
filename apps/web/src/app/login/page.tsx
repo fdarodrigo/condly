@@ -6,11 +6,11 @@ export default function LoginPage() {
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
       <div
-        className="pointer-events-none absolute -top-32 -right-32 size-96 rounded-full bg-primary/20 blur-3xl"
+        className="pointer-events-none absolute -top-32 -right-32 size-96 rounded-full bg-primary/25 blur-3xl"
         aria-hidden="true"
       />
       <div
-        className="pointer-events-none absolute -bottom-40 -left-40 size-96 rounded-full bg-primary/10 blur-3xl"
+        className="pointer-events-none absolute -bottom-40 -left-40 size-96 rounded-full bg-primary/15 blur-3xl"
         aria-hidden="true"
       />
       <Card className="relative z-10 w-full max-w-sm">

@@ -54,6 +54,14 @@ const GRUPO_VITRINE: ItemNavegacao[] = [
   { href: '/relatorios', label: 'Relatórios', testId: 'relatorios', icone: BarChart3 },
 ];
 
+function RotuloGrupo({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="px-3 text-[0.625rem] font-semibold tracking-[0.12em] text-muted-foreground/70 uppercase">
+      {children}
+    </span>
+  );
+}
+
 function ItemLink({ item, ativo }: { item: ItemNavegacao; ativo: boolean }) {
   const Icone = item.icone;
   return (
@@ -62,21 +70,14 @@ function ItemLink({ item, ativo }: { item: ItemNavegacao; ativo: boolean }) {
       data-testid={`nav-${item.testId}`}
       aria-current={ativo ? 'page' : undefined}
       className={cn(
-        'group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-foreground/70 transition-colors',
+        'group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors',
         'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-        ativo && 'bg-sidebar-accent text-sidebar-accent-foreground',
+        ativo && 'bg-sidebar-accent font-semibold text-sidebar-accent-foreground shadow-[inset_3px_0_0_var(--brand)]',
       )}
     >
-      <span
-        className={cn(
-          'absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary transition-opacity',
-          ativo ? 'opacity-100' : 'opacity-0',
-        )}
-        aria-hidden="true"
-      />
       <Icone
         className={cn(
-          'size-4 shrink-0 text-foreground/40 transition-colors group-hover:text-primary',
+          'size-[18px] shrink-0 transition-colors group-hover:text-primary',
           ativo && 'text-primary',
         )}
         aria-hidden="true"
@@ -99,31 +100,32 @@ export function Sidebar() {
       aria-label="Navegação principal"
       className="hidden w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex"
     >
-      <div className="flex h-14 items-center border-b border-sidebar-border px-4">
+      <div className="flex h-17 items-center border-b border-sidebar-border px-4">
         <Wordmark />
       </div>
 
-      <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-3">
-        <ul className="flex flex-col gap-0.5">
-          {GRUPO_PRINCIPAL.map((item) => (
-            <li key={item.href}>
-              <ItemLink item={item} ativo={Boolean(pathname?.startsWith(item.href))} />
-            </li>
-          ))}
-          {ehAdministradora && (
-            <li key={ITEM_CARTEIRA.href}>
-              <ItemLink
-                item={ITEM_CARTEIRA}
-                ativo={Boolean(pathname?.startsWith(ITEM_CARTEIRA.href))}
-              />
-            </li>
-          )}
-        </ul>
+      <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-3 pt-5">
+        <div className="flex flex-col gap-1">
+          <RotuloGrupo>Principal</RotuloGrupo>
+          <ul className="flex flex-col gap-0.5">
+            {GRUPO_PRINCIPAL.map((item) => (
+              <li key={item.href}>
+                <ItemLink item={item} ativo={Boolean(pathname?.startsWith(item.href))} />
+              </li>
+            ))}
+            {ehAdministradora && (
+              <li key={ITEM_CARTEIRA.href}>
+                <ItemLink
+                  item={ITEM_CARTEIRA}
+                  ativo={Boolean(pathname?.startsWith(ITEM_CARTEIRA.href))}
+                />
+              </li>
+            )}
+          </ul>
+        </div>
 
-        <div className="flex flex-col gap-0.5">
-          <span className="px-3 text-[0.6875rem] font-semibold tracking-wider text-muted-foreground/70 uppercase">
-            Em breve
-          </span>
+        <div className="flex flex-col gap-1">
+          <RotuloGrupo>Em breve</RotuloGrupo>
           <ul className="flex flex-col gap-0.5">
             {GRUPO_VITRINE.map((item) => (
               <li key={item.href}>

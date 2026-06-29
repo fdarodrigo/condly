@@ -18,7 +18,7 @@ interface PreviewPlaceholderProps {
 export function PreviewPlaceholder({ icone: Icone, titulo, descricao }: PreviewPlaceholderProps) {
   return (
     <Card
-      className="max-w-md border-2 border-dashed border-border bg-white/70 shadow-none ring-0"
+      className="max-w-md border-2 border-dashed border-border bg-card/70 shadow-none ring-0"
       data-testid="preview-placeholder"
     >
       <CardContent className="flex flex-col items-center gap-4 px-8 py-12 text-center">
