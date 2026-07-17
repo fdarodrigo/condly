@@ -1,4 +1,4 @@
-import { IsEnum, IsIn, IsNotEmpty, IsString } from 'class-validator';
+import { IsEnum, IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { VisibilidadeDocumento } from '../../../generated/prisma/client';
 
 // Restringe a tipos de arquivo que o módulo de documentos realmente precisa
@@ -14,11 +14,13 @@ export class CriarUploadUrlDto {
   @IsEnum(VisibilidadeDocumento)
   visibilidade!: VisibilidadeDocumento;
 
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  nomeArquivo!: string;
+  nomeArquivo?: string;
 
+  @IsOptional()
   @IsString()
   @IsIn(TIPOS_MIME_PERMITIDOS)
-  contentType!: string;
+  contentType?: string;
 }

@@ -21,15 +21,29 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
   title: 'Condly',
   description: 'Gestão condominial multi-tenant',
+  applicationName: 'Condly',
   manifest: '/manifest.json',
   icons: {
-    icon: '/icons/icon.svg',
-    apple: '/icons/icon.svg',
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon.svg', type: 'image/svg+xml' },
+    ],
+    // iOS não lê o manifest pra isso: exige <link rel="apple-touch-icon">
+    // com PNG opaco (sem transparência) pro "Adicionar à Tela de Início".
+    apple: '/icons/apple-touch-icon.png',
+  },
+  appleWebApp: {
+    capable: true,
+    title: 'Condly',
+    statusBarStyle: 'black-translucent',
   },
 };
 
 export const viewport: Viewport = {
   themeColor: '#0b0d11',
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({

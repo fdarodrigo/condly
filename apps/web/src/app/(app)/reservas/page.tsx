@@ -5,7 +5,7 @@ import { ReservasContent } from './reservas-content';
 
 export default function ReservasPage() {
   return (
-    <RequireRole roles={['CONDOMINO']}>
+    <RequireRole roles={['CONDOMINO', 'SINDICO', 'ADMINISTRADORA']}>
       <PageHeader
         icone={CalendarDays}
         titulo="Reservas"

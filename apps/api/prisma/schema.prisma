@@ -30,6 +30,12 @@ enum StatusChamado {
   RESOLVIDO
 }
 
+// Categorias fixas para agrupamento em métricas e relatórios.
+// Armazenado como String no banco pra não quebrar migrations com dados
+// legados — a validação enum é feita no DTO (mesmo padrão de Documento.tipo).
+// Valores válidos: MANUTENCAO | VAZAMENTO | BARULHO | LIMPEZA | SEGURANCA
+//                  | ILUMINACAO | ELEVADOR | AREA_COMUM | PORTARIA | OUTRO
+
 enum CanalAviso {
   APP
   EMAIL
@@ -44,6 +50,17 @@ enum StatusReserva {
 enum VisibilidadeDocumento {
   TODOS
   SINDICO_ADMINISTRADORA
+}
+
+enum TipoEnquete {
+  GESTAO
+  SERVICO
+}
+
+enum StatusEnquete {
+  RASCUNHO
+  ATIVA
+  ENCERRADA
 }
 
 model Administradora {
@@ -62,6 +79,10 @@ model Condominio {
   nome              String
   endereco          String
   cnpj              String  @unique
+  telefone          String?
+  email             String?
+  // null = todos os toggles permitidos (compatibilidade com dados anteriores)
+  permissoesSindico Json?
   subcontaGatewayId String?
 
   administradora     Administradora     @relation(fields: [administradoraId], references: [id])
@@ -71,7 +92,11 @@ model Condominio {
   documentos         Documento[]
   avisos             Aviso[]
   areasComuns        AreaComum[]
-  servicosPeriodicos ServicoPeriodico[]
+  servicosPeriodicos   ServicoPeriodico[]
+  acoesAdministrativas AcaoAdministrativa[]
+  enquetes             Enquete[]
+  assembleias          Assembleia[]
+  advertencias         Advertencia[]
 
   @@index([administradoraId])
 }
@@ -96,6 +121,8 @@ model Unidade {
   avisos       Aviso[]
   reservas     Reserva[]
   conversasBot ConversaBot[]
+  advertencias Advertencia[]
+  dadosUnidade DadosUnidade?
 
   @@unique([condominioId, identificador])
   @@index([condominioId])
@@ -108,10 +135,12 @@ model Usuario {
   telefoneWhatsapp String?
   senhaHash        String
 
-  vinculos            VinculoUsuario[]
-  chamadosAbertos     Chamado[]        @relation("ChamadoAbertoPor")
-  chamadosResponsavel Chamado[]        @relation("ChamadoResponsavel")
-  avisoLeituras       AvisoLeitura[]
+  vinculos               VinculoUsuario[]
+  chamadosAbertos        Chamado[]        @relation("ChamadoAbertoPor")
+  chamadosResponsavel    Chamado[]        @relation("ChamadoResponsavel")
+  avisoLeituras          AvisoLeitura[]
+  votos                  VotoEnquete[]
+  advertenciasEnviadas   Advertencia[]    @relation("AdvertenciaRemetente")
 }
 
 model VinculoUsuario {
@@ -157,6 +186,8 @@ model Chamado {
   unidadeId     String?
   abertoPorId   String
   responsavelId String?
+  titulo        String        @default("")
+  descricao     String?
   categoria     String
   status        StatusChamado
   criadoEm      DateTime      @default(now())
@@ -172,6 +203,7 @@ model Chamado {
   @@index([unidadeId])
   @@index([abertoPorId])
   @@index([responsavelId])
+  @@index([categoria])
 }
 
 model Documento {
@@ -244,6 +276,7 @@ model Reserva {
   inicio      DateTime
   fim         DateTime
   status      StatusReserva
+  criadoEm   DateTime      @default(now())
 
   areaComum AreaComum @relation(fields: [areaComumId], references: [id])
   unidade   Unidade   @relation(fields: [unidadeId], references: [id])
@@ -270,6 +303,67 @@ model ServicoPeriodico {
   @@index([condominioId])
 }
 
+model Enquete {
+  id           String        @id @default(cuid())
+  condominioId String
+  titulo       String
+  descricao    String?
+  tipo         TipoEnquete
+  status       StatusEnquete @default(RASCUNHO)
+  anonima      Boolean       @default(false)
+  inicioEm     DateTime      @db.Date
+  fimEm        DateTime      @db.Date
+  criadoEm     DateTime      @default(now())
+
+  condominio Condominio     @relation(fields: [condominioId], references: [id])
+  opcoes     OpcaoEnquete[]
+  votos      VotoEnquete[]
+
+  @@index([condominioId])
+}
+
+model OpcaoEnquete {
+  id        String @id @default(cuid())
+  enqueteId String
+  texto     String
+  ordem     Int
+
+  enquete Enquete       @relation(fields: [enqueteId], references: [id])
+  votos   VotoEnquete[]
+
+  @@index([enqueteId])
+}
+
+model VotoEnquete {
+  id        String   @id @default(cuid())
+  enqueteId String
+  opcaoId   String
+  usuarioId String
+  votadoEm  DateTime @default(now())
+
+  enquete Enquete      @relation(fields: [enqueteId], references: [id])
+  opcao   OpcaoEnquete @relation(fields: [opcaoId], references: [id])
+  usuario Usuario      @relation(fields: [usuarioId], references: [id])
+
+  @@unique([enqueteId, usuarioId])
+  @@index([enqueteId])
+  @@index([opcaoId])
+}
+
+model AcaoAdministrativa {
+  id           String    @id @default(cuid())
+  condominioId String
+  titulo       String
+  descricao    String?
+  realizadaEm  DateTime  @db.Date
+  validoAte    DateTime? @db.Date
+  criadoEm     DateTime  @default(now())
+
+  condominio Condominio @relation(fields: [condominioId], references: [id])
+
+  @@index([condominioId])
+}
+
 // unidadeId é opcional porque a conversa é registrada mesmo quando o
 // telefoneWhatsapp não está vinculado a nenhum Usuario/Unidade ainda
 // (auditoria de toda interação, inclusive tentativas de número não
@@ -281,10 +375,118 @@ model ConversaBot {
   unidadeId        String?
   telefoneWhatsapp String
   mensagens        Json
+  // Estado do fluxo multi-turno em andamento (reserva, chamado) — null
+  // quando não há fluxo ativo. Shape: { tipo, etapa, dados, atualizadoEm }
+  // (ver bot/fluxos/tipos.ts). Expira por inatividade, nunca é fonte de
+  // autoridade: a identidade continua vindo só do telefoneWhatsapp.
+  fluxo            Json?
   criadoEm         DateTime @default(now())
 
   unidade Unidade? @relation(fields: [unidadeId], references: [id])
 
   @@index([unidadeId])
   @@index([telefoneWhatsapp])
+}
+
+enum TipoAssembleia {
+  ORDINARIA
+  EXTRAORDINARIA
+}
+
+enum StatusAssembleia {
+  AGENDADA
+  REALIZADA
+  CANCELADA
+}
+
+model Assembleia {
+  id             String           @id @default(cuid())
+  condominioId   String
+  titulo         String
+  tipo           TipoAssembleia
+  status         StatusAssembleia @default(AGENDADA)
+  dataHora       DateTime
+  local          String?
+  linkGravacao   String?
+  acrescimoTaxa  Decimal?
+  acrescimoAte   DateTime?
+  criadoEm       DateTime         @default(now())
+
+  condominio Condominio          @relation(fields: [condominioId], references: [id])
+  pautas     PautaAssembleia[]
+  documentos AssembleiaDocumento[]
+
+  @@index([condominioId])
+}
+
+model PautaAssembleia {
+  id           String  @id @default(cuid())
+  assembleiaId String
+  ordem        Int
+  titulo       String
+  descricao    String?
+  deliberacao  String?
+
+  assembleia Assembleia @relation(fields: [assembleiaId], references: [id])
+
+  @@index([assembleiaId])
+}
+
+model AssembleiaDocumento {
+  id           String  @id @default(cuid())
+  assembleiaId String
+  titulo       String
+  url          String?
+
+  assembleia Assembleia @relation(fields: [assembleiaId], references: [id])
+
+  @@index([assembleiaId])
+}
+
+// Dados complementares de uma unidade: perfil habitacional preenchido pela
+// ADM/SINDICO para subsidiar o atendimento de chamados. Campos sensíveis
+// (saúde, mobilidade) — só lidos por SINDICO e ADMINISTRADORA (CLAUDE.md).
+// statusOcupacao: PROPRIETARIO | INQUILINO | VAZIA
+// veiculos: JSON array de { placa, modelo, cor }
+model DadosUnidade {
+  id                        String  @id @default(cuid())
+  unidadeId                 String  @unique
+  bebeRecemNascido          Boolean @default(false)
+  trabalhadorNoturno        Boolean @default(false)
+  pessoasIdosas             Boolean @default(false)
+  pets                      Boolean @default(false)
+  petsDescricao             String?
+  pessoasAutismo            Boolean @default(false)
+  pessoasAutismoDescricao   String?
+  estrangeiros              Boolean @default(false)
+  mobilidadeReduzida        Boolean @default(false)
+  locacaoCurtaTemporada     Boolean @default(false)
+  statusOcupacao            String  @default("PROPRIETARIO")
+  veiculos                  Json    @default("[]")
+  contatoEmergenciaNome     String?
+  contatoEmergenciaTelefone String?
+
+  unidade Unidade @relation(fields: [unidadeId], references: [id], onDelete: Cascade)
+}
+
+// Advertência formal emitida por ADM/SINDICO a uma unidade específica.
+// Motivo armazenado como String (mesmo padrão de Chamado.categoria):
+// valores válidos: BARULHO | DESCUMPRIMENTO_REGRAS | DANO_PATRIMONIO
+//                  | INADIMPLENCIA | CONDUTA_INADEQUADA | OUTRO
+model Advertencia {
+  id           String   @id @default(cuid())
+  condominioId String
+  unidadeId    String
+  remetenteId  String
+  motivo       String
+  descricao    String
+  criadoEm     DateTime @default(now())
+
+  condominio Condominio @relation(fields: [condominioId], references: [id])
+  unidade    Unidade    @relation(fields: [unidadeId], references: [id])
+  remetente  Usuario    @relation("AdvertenciaRemetente", fields: [remetenteId], references: [id])
+
+  @@index([condominioId])
+  @@index([unidadeId])
+  @@index([remetenteId])
 }

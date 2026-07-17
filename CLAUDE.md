@@ -23,7 +23,12 @@ navegação, não a fonte da verdade.
 - `npm run test:unit` — Jest sem tocar banco (apps/api) ou Vitest +
   Testing Library (apps/web)
 - `npm run test:integration` (apps/api) — aplica migrations no banco de
-  teste (`TEST_DATABASE_URL`) e roda os specs `*.integration-spec.ts`
+  teste (`TEST_DATABASE_URL`) e roda os specs `*.integration-spec.ts`.
+  **NUNCA rode `npx jest --config test/jest-integration.json` direto**: é
+  o wrapper (`scripts/test-integration.js`) que troca `DATABASE_URL` pelo
+  banco de teste — sem ele, os specs conectam no `condly_dev` e o
+  `limparBanco` do beforeAll APAGA o banco de desenvolvimento (aconteceu
+  de verdade; recuperado com `npm run db:seed`)
 - `npm run lint` / `npx tsc --noEmit` — lint e checagem de tipos
 - `npx prisma migrate dev` — aplicar migrations no banco de desenvolvimento
 - `npm run db:seed` — popular banco de demonstração (`DATABASE_URL`, **apaga
@@ -175,6 +180,26 @@ ignorar silenciosamente:
   tem teste explícito de idempotência (marcar como lido um aviso já lido
   duas vezes) — comportamento atual é sobrescrever `lidoEm` com um novo
   timestamp, o que é aceitável, só não está coberto por teste nomeado.
+- **AVISO** (aceito, módulo chamados+advertências): `ChamadosService.abrirChamado`
+  usa `usuario.vinculos.some((v) => v.papel === 'ADMINISTRADORA')` sem checar
+  se o `administradoraId` desse vínculo corresponde ao da rota — o
+  `RolesGuard` já garante essa correspondência antes de o service ser chamado,
+  então não é exploitável. Code smell documentado conscientemente: o service
+  depende do invariante do Guard externo, sem defesa própria, igual ao padrão
+  já aceito em outros services (ex: visibilidade de chamados por CONDOMINO
+  delegada ao service, não ao Guard). Não normalizar para evitar um DB call
+  extra só pra defender algo que o Guard já garantiu.
+- **SUGESTÃO** (aberta, módulo advertências): `AdvertenciasService.listarMinhas`
+  recebe `tenantPrisma` pelo controller mas na prática é o client cru (sem
+  scope) — mesmo padrão de `AvisosService.listarNaoLidos` em
+  `GET /usuarios/me/avisos`. O isolamento vem exclusivamente do filtro
+  `unidadeId: { in: unidadeIds }` derivado dos vínculos CONDOMINO do JWT
+  assinado pelo backend. Não é uma falha; documentado aqui para que refactors
+  futuros não confundam o tipo com uma proteção que não existe naquele contexto.
+- **SUGESTÃO** (aberta, módulo chamados): `ChamadosService.remover` é hard
+  delete sem checagem de status — um chamado `EM_ANDAMENTO` pode ser apagado
+  sem rastro. Sem problema de isolamento; se auditoria for exigida futuramente,
+  adicionar soft delete ou log (mesmo espírito da sugestão de `ReservasService.cancelar`).
 
 ## Decisões de escopo do módulo chamados (Prompt 4, revisado no Prompt B)
 - `POST /condominios/:id/chamados`: só SINDICO e CONDOMINO abrem chamado
@@ -536,6 +561,21 @@ ignorar silenciosamente:
   padrão de nome. Reforçar essa trava (ex: variável explícita) se um
   ambiente real com dados de tenants existir antes desse padrão de nome
   ser revisado.
+- **AVISO corrigido (Prompt 10.75)**: `criarCobrancas` distribuía status
+  por faixa contígua de índice (`PAGO` = primeiros 12, `PENDENTE`/
+  `ATRASADO` = últimos 6) sobre o array `unidades` — e os 3 condôminos de
+  demonstração são sempre vinculados às 3 primeiras unidades desse mesmo
+  array (`criarUsuarios`). Resultado: as 3 unidades dos logins de
+  condômino caíam inteiras no bloco `PAGO` só por serem os primeiros
+  índices — nenhum dos 5 logins de demonstração tinha uma `Cobranca`
+  pendente/atrasada pra mostrar em `/minha-unidade` (achado da confirmação
+  de dados de demonstração, ver seção "Dados de demonstração" do
+  README.md). Corrigido trocando os ranges contíguos por listas
+  explícitas de índice (`INDICES_PAGO`/`INDICES_PENDENTE`/
+  `INDICES_ATRASADO`) que deixam as unidades 0, 1 e 2 (101/102/103, dos 3
+  condôminos) fora do bloco `PAGO` de propósito — contagens totais por
+  status (12/4/2) inalteradas, só mudou qual unidade recebe qual status,
+  então `verify-seed-counts.ts` não precisou de nenhuma alteração.
 
 ## Decisões de escopo do frontend e infra de dev (Prompt 10.5)
 - `apps/web` saiu do scaffold puro do Prompt 0 pra ganhar a casca da
@@ -1043,6 +1083,420 @@ mockup.
   `RequireRole roles={['CONDOMINO']}` (decisão já registrada no Prompt
   10.5) — testar essa rota logado como síndico redireciona pro dashboard
   por design, não é regressão desta mudança.
+
+## Correções de acesso do perfil ADMINISTRADORA (pós-importação de design)
+Problema: todas as telas por-condomínio (`/dashboard`, `/reservas`,
+`/documentos`, `/avisos`) mostravam mensagem de "usuário não vinculado
+a condomínio" para ADMINISTRADORA, pois o JWT dela só carrega
+`administradoraId` (sem `condominioId`) — diferente de SINDICO e
+CONDOMINO. `/reservas` redirecionava pro dashboard por ter `RequireRole
+roles={['CONDOMINO']}` exclusivo.
+
+**Mudanças realizadas:**
+- Novo endpoint de backend `GET /administradoras/:administradoraId/condominios`
+  (`AdministradorasController`) — retorna `{ id, nome }` de todos os
+  condomínios da carteira. Protegido por `@Roles('ADMINISTRADORA')` +
+  `@CurrentTenantPrisma()` + `where: { administradoraId }` explícito (dupla
+  camada). Auditado pelo `checar-isolamento-tenant`: nenhuma violação.
+- `rotaInicialParaVinculos` (`lib/auth.ts`): ADMINISTRADORA agora rota para
+  `/administradora/dashboard` (antes caía em `/dashboard` junto com SINDICO).
+- `/dashboard` `RequireRole` mudou para `['SINDICO']` apenas — ADMINISTRADORA
+  já tem `/administradora/dashboard`, não precisa acessar o dashboard por
+  condomínio.
+- Sidebar: item "Dashboard" é ocultado para ADMINISTRADORA (ela usa
+  "Carteira" que aponta para `/administradora/dashboard`).
+- Novo hook `useCondominioAtivo` (`lib/hooks/use-condominio-ativo.ts`):
+  resolve `condominioId` para qualquer papel. Para SINDICO/CONDOMINO: lê
+  diretamente dos vínculos do JWT. Para ADMINISTRADORA: chama o novo
+  endpoint e pré-seleciona o primeiro condomínio; expõe a lista completa
+  para um `CondominioSelector` (select nativo, mesmo padrão do seletor de
+  área comum no Prompt 10.5).
+- `/reservas` `RequireRole` mudou para `['CONDOMINO', 'SINDICO',
+  'ADMINISTRADORA']`.
+- `ReservasContent`, `DocumentosContent`, `AvisosContent`: todos reescritos
+  para usar `useCondominioAtivo()` em vez de ler vínculos diretamente.
+  Cada um exibe `CondominioSelector` quando `condominios.length > 1`
+  (ADMINISTRADORA com múltiplos condomínios na carteira).
+- Para AvisosContent: CONDOMINO continua vendo a lista de não lidos
+  (`GET /usuarios/me/avisos`, sem condominioId). ADMINISTRADORA/SINDICO
+  veem o formulário de criação com seletor de condomínio acima.
+- Validação: lint limpo, `tsc --noEmit` sem erros nos dois apps.
+
+## Dashboard multi-papel e expansão do seed (pós-correções de acesso ADM)
+- `/dashboard` agora aceita `['SINDICO', 'ADMINISTRADORA']`. Um `DashboardRouter`
+  client-side (`dashboard/dashboard-router.tsx`) decide qual componente renderizar:
+  ADMINISTRADORA → `AdministradoraDashboardContent` (portfólio completo);
+  SINDICO → `DashboardContent` (financeiro + chamados do condomínio).
+- `rotaInicialParaVinculos` em `lib/auth.ts`: ADMINISTRADORA e SINDICO ambos
+  caem em `/dashboard` (não mais `/administradora/dashboard`).
+- Sidebar: "Dashboard" agora aparece para todos os papéis (filtro anterior que
+  ocultava para ADMINISTRADORA removido). "Carteira" continua condicional só
+  para ADMINISTRADORA — é uma segunda visão de portfólio, não substituta do
+  Dashboard.
+- `AdministradoraDashboardContent` (em `administradora/dashboard/`) contém o
+  portfólio rico (KPIs, ranking arrecadação, faixas inadimplência, renovações,
+  NPS mock, balanço mock) — mesmo componente, agora acessado via `/dashboard`.
+- `CarteiraContent` (`carteira-content.tsx`) — novo componente simples que lista
+  os condomínios com arrecadação e inadimplência básicas; renderizado pela
+  página Carteira (`/administradora/dashboard`).
+- **Seed expandido para 10 condomínios** (antes 1), todos vinculados à única
+  administradora, com dados variados de adimplência (62%–100%), chamados
+  distribuídos e serviços periódicos a vencer nos próximos 30 dias. Usuários
+  de demo (administradora, síndico, 3 condôminos) continuam vinculados ao
+  primeiro condomínio (Residencial Ipê Verde). Os outros 9 condomínios não têm
+  usuários de demo, mas têm cobranças, chamados e serviços reais pra popular
+  o dashboard da administradora.
+
+## Decisões de escopo de dados complementares de unidade (DadosUnidade)
+- Novo model `DadosUnidade` (1:1 com `Unidade`, `unidadeId @unique`, `onDelete: Cascade`)
+  com 11 campos booleanos, `statusOcupacao` (String enum: PROPRIETARIO/INQUILINO/VAZIA),
+  `veiculos` (Json array: `[{ placa, modelo, cor }]`) e 4 campos opcionais de texto — todos
+  opcionais (`@default(false)` nos booleanos), preenchidos sob demanda.
+- Entra em `UNIDADE_ID_MODELS` de `tenant-prisma.ts` (tem `unidadeId` direto, mesmo padrão de
+  `Cobranca`/`Reserva`). Para scope `unidadeId`: `{ unidadeId: scope.unidadeId }`. Para scope
+  `condominioId`-only: `{ unidade: { condominioId: ... } }`. Para `administradoraId`-only:
+  `{ unidade: { condominio: { administradoraId: ... } } }`.
+- **Regra inegociável** (CLAUDE.md "Outras regras de domínio"): campos sensíveis só podem
+  ser lidos por SINDICO e ADMINISTRADORA. Por isso os dois endpoints são `@Roles('ADMINISTRADORA',
+  'SINDICO')` — não há rota "minha conta" para CONDOMINO ler/escrever estes dados diretamente.
+  Se um endpoint de auto-preenchimento pelo condômino for criado futuramente, exige nova análise
+  de segurança (quais campos são sensíveis, como proteger de leitura cruzada).
+- `GET /unidades/:unidadeId/dados` e `PUT /unidades/:unidadeId/dados` resolvem o scope pelo
+  `unidadeId` já existente em `TenantScopeResolverService` — sem branch novo. O `salvar` faz
+  `upsert` (cria se não existe, atualiza se já existe) — idempotente, sem 404 em primeira chamada.
+- Vínculo com chamados: frontend (`chamados-content.tsx`) mostra um painel "Dados da unidade"
+  (lazy-load, expansível via botão "Ver dados") para gestores que expandem um chamado com
+  `unidadeId`. CONDOMINO nunca vê este painel — o botão só renderiza se `ehGestor` é true.
+  O `chamados.service.ts` passou a incluir `unidade: { select: { id, identificador } }` (antes
+  era só `identificador`) para o frontend poder chamar o endpoint de dados com o id real.
+- Vínculo com perfil: `perfil-content.tsx` (`AbaUnidades`) ganhou expansão por unidade com
+  `FormDadosUnidade` — cada item da lista de unidades tem um botão de expansão que carrega e
+  permite editar os dados complementares daquela unidade via `GET/PUT /unidades/:id/dados`.
+- Auditoria de segurança pós-implementação (tenant-security-reviewer): nenhum CRÍTICO. Achados:
+  - **AVISO** (aceito): `DadosUnidadeService.buscar` retorna `null` em vez de 404 quando a
+    unidade ainda não tem perfil preenchido — não é falha de isolamento (o filtro do
+    `tenantPrisma` já garante que a query só enxerga a unidade autorizada), só diferença de
+    contrato de API. Comportamento intencional: o frontend distingue `null` (sem dados) de erro.
+  - **AVISO** (aceito): o bloco `create` do `upsert` em `salvar` não recebe o filtro de tenant
+    do `tenant-prisma.ts` (mesmo padrão já documentado para outros services com `upsert`) — o
+    `unidadeId` no `create` já foi validado na linha anterior via `tenantPrisma.unidade.findUnique`
+    (que está sob filtro), então não há exploração possível.
+  - **SUGESTÃO** (aberta): nenhum teste de integração cobre os dois novos endpoints —
+    falta cenário de CONDOMINO recebendo 403, de SINDICO de tenant diferente sendo bloqueado,
+    e de idempotência do upsert. O isolamento está correto no código; a lacuna é de cobertura.
+  - **SUGESTÃO** (aberta): `abrePorAdm` em `ChamadosService.abrirChamado` usa
+    `usuario.vinculos.some((v) => v.papel === 'ADMINISTRADORA')` sem checar `administradoraId`
+    — mesmo code smell já aceito e documentado para `abrePorSindico` na mesma função; não é
+    exploitável pelo mesmo motivo (o `RolesGuard` já garante o vínculo antes do service).
+
+## Decisões de escopo do módulo assembleias
+- Novos models `Assembleia` (condominioId direto → entra em `CONDOMINIO_ID_MODELS`),
+  `PautaAssembleia` e `AssembleiaDocumento` (sem condominioId próprio, mesmo padrão
+  de `OpcaoEnquete`/`AvisoLeitura` — isolamento garantido pela validação do pai via
+  `tenantPrisma` antes de operar nos filhos via `this.prisma` com filtro duplo
+  `{ id, assembleiaId }`).
+- Status: `AGENDADA → REALIZADA | CANCELADA`. Só `AGENDADA` pode ser excluída
+  (`DELETE`). `CANCELADA` não pode ser editada. `REALIZADA` pode receber novos
+  documentos e ter deliberações atualizadas mas não muda de status — decisão deliberada
+  (uma assembleia realizada é um registro imutável de evento, não um draft).
+- "Registrar resultados" (`PATCH /assembleias/:id` com `status: REALIZADA` + `pautas`
+  com deliberações + `linkGravacao`) é uma operação única — o SINDICO/ADM faz tudo de
+  uma vez ao fechar a assembleia, não em múltiplos PATCHs separados. O endpoint
+  aceita atualizações parciais de qualquer campo também (para editar data/local de
+  uma assembleia AGENDADA antes de ela acontecer).
+- Documentos da assembleia são referências manuais (título + URL opcional), não
+  integram com o módulo de documentos do R2 — mantém a tela de Assembleias
+  independente do fluxo de upload e não exige credenciais R2 para funcionar.
+  Revisar se um endpoint de "vincular documento existente" for pedido futuramente.
+- `GET /condominios/:condominioId/assembleias` retorna lista completa com pautas e
+  documentos incluídos (um único `findMany` com `include`) — CONDOMINO precisa ver
+  deliberações sem precisar de um GET por assembleia, então a resposta é rica desde a
+  listagem. Quantidade de assembleias por condomínio é baixa (1–2 por ano), então
+  não há problema de payload.
+- Acessível a todos os papéis autenticados (`ADMINISTRADORA`, `SINDICO`, `CONDOMINO`)
+  para leitura. Mutações (criar, editar, excluir, cancelar, adicionar/remover
+  documentos) exigem `ADMINISTRADORA` ou `SINDICO` — CONDOMINO é sempre somente
+  leitura. Ênfase nas deliberações é deliberada e documentada: é comum que moradores
+  não presentes contestem decisões; ter um registro datado e assinado pela
+  assembleia resolve isso.
+- Auditoria de segurança pós-implementação (tenant-security-reviewer): nenhum
+  CRÍTICO/AVISO. SUGESTÃO aberta: `remover` valida via `tenantPrisma` e depois
+  deleta via `this.prisma.$transaction` sem atomicidade entre as duas etapas — em
+  cenário de deleção concorrente pode gerar 500 do Prisma em vez de 404 controlado.
+  Mesma limitação já aceita em `ReservasService.cancelar`.
+
+## Seed expandido (usuários por condomínio) + condomínio na topbar
+Pedido do usuário: (1) mostrar o condomínio associado quando SINDICO/
+CONDOMINO logam; (2) 1 síndico por condomínio e ~10 condôminos por
+condomínio pra testes; (3) semear enquetes, avisos e todo dado possível
+pra visualizar as features.
+- Topbar (`components/layout/topbar.tsx`): busca `GET /condominios/:id`
+  (endpoint já aberto aos 3 papéis) usando `obterCondominioId` dos
+  vínculos do JWT e mostra o nome ao lado do badge de papel
+  (`data-testid="topbar-condominio"`). ADMINISTRADORA não tem
+  `condominioId` no vínculo, então o badge não aparece pra ela — por
+  design (ela tem carteira, não UM condomínio).
+- `prisma/seed.ts`: cada condomínio agora tem 1 síndico
+  (`sindico{N}.demo@condly.app`, N=2..10; o 1º continua
+  `sindico.demo@condly.app`) e até 10 condôminos
+  (`condomino{J}.demo@condly.app` no 1º condomínio,
+  `condomino{J}.c{N}.demo@condly.app` nos demais), vinculados às
+  unidades 101 em diante — 109 usuários no total, os 5 logins originais
+  inalterados. Telefones WhatsApp únicos e sequenciais (regra de
+  identidade do bot). Chamados passaram a ser abertos pelo síndico do
+  próprio condomínio (2 deles por condôminos do 1º condomínio); aviso
+  geral com leituras pra todos os destinatários em TODOS os condomínios;
+  novos dados de demonstração: 5 enquetes (ATIVA/ENCERRADA/RASCUNHO, com
+  votos), 3 assembleias (AGENDADA/REALIZADA com pautas, deliberações e
+  documentos), 4 ações administrativas, 3 documentos (keys R2 fictícias
+  — listagem funciona, download falha controlado, mesmo padrão do upload
+  em dev) e `DadosUnidade` das unidades 101–103 do 1º condomínio.
+- `distribuirStatusCobrancas` extraída como função pura exportada, e
+  `contagensEsperadas()` exportada do seed computa TODAS as contagens a
+  partir das mesmas configs — `verify-seed-counts.ts` consome isso e
+  nunca mais precisa de recontagem manual (estava desatualizado desde a
+  expansão pra 10 condomínios e ninguém percebeu).
+- `test/helpers/cleanup-database.ts` não apagava Enquete/OpcaoEnquete/
+  VotoEnquete/Assembleia/PautaAssembleia/AssembleiaDocumento/
+  AcaoAdministrativa — quebraria o seed na 2ª execução por FK assim que
+  essas tabelas tivessem dados. Corrigido (deleteMany na ordem de FK).
+- Specs de integração atualizados pra contratos que já tinham mudado em
+  sessões anteriores sem atualizar os testes (12 falhas pré-existentes,
+  nenhuma causada por esta sessão): `titulo` obrigatório + `categoria`
+  enum em chamados; ADMINISTRADORA abre chamado como ABERTO
+  (`abrePorAdm`); CONDOMINO lê o próprio condomínio (200) mas nunca o de
+  outro tenant (403 — teste novo); `areas-comuns` retorna
+  `regrasReserva`. Também corrigido `documentos-content.test.tsx` (web),
+  que ainda mockava o fluxo antigo de upload por signed URL em vez do
+  `POST /documentos/upload` multipart atual.
+- Validação: 112/112 testes de integração, 15/15 testes de componente,
+  tsc e lint limpos nos dois apps; seed rodado 2x no dev (idempotência) +
+  smoke test; fluxo da topbar exercitado contra a API real com
+  condômino, síndico novo e condômino de outro condomínio.
+
+## Correção do service worker do PWA (cache-first congelava dados da API)
+Sintoma reportado: condômino criava um chamado, o síndico via, mas a
+listagem do próprio condômino não atualizava. Causa raiz: o `sw.js` do
+scaffold PWA (Prompt 0) fazia **cache-first de todo GET**, inclusive das
+chamadas autenticadas à API — a primeira resposta de cada URL ficava
+congelada no Cache Storage e todo refetch subsequente era servido dela
+(o backend estava correto o tempo todo: via curl/node, que não passam
+pelo service worker, POST→GET imediato sempre refletia o dado novo; só
+o navegador via a lista velha). Agravante de segurança: a chave do cache
+é só a URL (`Authorization` não participa), então trocar de usuário no
+mesmo navegador podia servir a resposta cacheada do usuário anterior —
+ex. um condômino recebendo a lista completa de chamados cacheada por um
+síndico do mesmo condomínio.
+- Correção em `public/sw.js` (v2): requisições de outra origem (a API)
+  não são mais interceptadas — passam direto pra rede, sempre. Same-origin
+  (shell/assets) mudou de cache-first pra network-first com fallback no
+  cache (offline continua funcionando, sem servir asset velho com rede
+  disponível). `skipWaiting` + `clients.claim` + bump de `CACHE_NAME`
+  pra `condly-cache-v2` fazem o SW novo assumir e expurgar o cache
+  envenenado da v1 sem exigir que o usuário limpe nada manualmente.
+- Diagnóstico digno de nota pra debugging futuro: o bug NÃO reproduzia
+  via curl/node (sem SW) nem parecia cache HTTP (headers sem
+  Cache-Control); `page.route('**')` do Playwright também não desligava
+  o comportamento (fetches do service worker não passam pelo route do
+  Playwright). O padrão revelador foi "carga de página sempre fresca,
+  refetch pós-criação sempre idêntico à resposta anterior".
+- Se um dia o PWA precisar de cache offline de DADOS da API, isso exige
+  design próprio (chave por usuário, invalidação por mutação, TTL) —
+  nunca voltar o fetch handler genérico do sw.js pra cima da API.
+
+## Navegação mobile (drawer) — correção de PWA
+Sintoma reportado: em viewport mobile (emulação de device), a Sidebar some
+(`hidden md:flex`) e não existia NENHUMA navegação alternativa — as outras
+telas ficavam inacessíveis.
+- O conteúdo da navegação (grupos, itens, filtro por papel) foi extraído de
+  `Sidebar` pra um componente exportado `ConteudoNavegacao` em
+  `components/layout/sidebar.tsx`, compartilhado entre a sidebar desktop e o
+  novo drawer mobile — os itens nunca divergem entre os dois. `ItemLink`
+  ganhou `onClick` opcional (o drawer passa pra se fechar ao navegar).
+- Novo `components/layout/mobile-nav.tsx` (`MobileNav`): botão hambúrguer
+  (`md:hidden`, `data-testid="botao-menu-mobile"`) renderizado na Topbar +
+  drawer lateral (painel `w-72`, mesmo visual da sidebar) com backdrop.
+  Fecha ao navegar (efeito sobre `pathname`), ao clicar fora, no botão X e
+  com Escape; trava o scroll do fundo enquanto aberto. Implementação própria
+  com Tailwind (sem `Sheet` do shadcn) — mesmo espírito da decisão do
+  `<select>` nativo do Prompt 10.5: menos partes móveis e trivial de dirigir
+  em teste.
+- **Pegadinha que custou uma iteração**: o drawer é renderizado via
+  `createPortal(document.body)` porque a Topbar tem `backdrop-blur`, e
+  `backdrop-filter` cria containing block — um `position: fixed` descendente
+  fica confinado à caixa do header (o overlay só cobria a altura da topbar e
+  o `<main>` interceptava os cliques no backdrop). Se algum outro overlay
+  `fixed` for criado dentro da Topbar no futuro, precisa do mesmo portal.
+- Topbar deixou de ser `justify-end`: hambúrguer à esquerda, resto num
+  wrapper `ml-auto`; nome do condomínio ganhou `truncate` limitado a 40vw no
+  mobile pra não estourar a largura.
+- Verificado com Playwright em 390×844 (síndico): sidebar oculta, hambúrguer
+  visível, sem scroll horizontal, drawer abre com os 14 itens do papel,
+  navegar pra /avisos fecha o drawer, backdrop e Escape fecham; em 1280×800
+  a sidebar volta e o hambúrguer some. 15/15 testes de componente, tsc e
+  lint limpos.
+
+## Responsividade mobile + PWA instalável
+Pedido do usuário: telas "coladas na direita"/estourando no mobile, e
+deixar o app pronto pra instalar como PWA.
+- **Causa raiz do overflow (vale pra qualquer tela futura)**: a coluna de
+  conteúdo do layout autenticado (`app/(app)/layout.tsx`) é um flex item, e
+  flex item tem `min-width: auto` — qualquer elemento com `white-space:
+  nowrap` (o que inclui TODA classe `truncate` e o `Badge` do shadcn)
+  propaga sua largura mínima intrínseca até a raiz e estica a página
+  inteira além da viewport; o `truncate` nunca chega a agir. Corrigido com
+  `min-w-0` na coluna (`div.flex.min-w-0.flex-1.flex-col`). Diagnóstico
+  feito com auditoria Playwright em 390px medindo
+  `scrollWidth - clientWidth` por página/papel + bisseção do DOM
+  (esconder elementos até o overflow zerar) — o script é descartável, mas
+  a técnica fica registrada aqui.
+- Fixes pontuais restantes: Topbar (nome do condomínio é o único item que
+  encolhe/trunca; badge e Sair são `shrink-0`); `main` com `p-4 sm:p-6
+  md:p-8`; formulário de assembleias (grid `grid-cols-1 sm:grid-cols-2` +
+  `min-w-0` nos inputs — input de data/hora tem min-width intrínseco
+  grande); cabeçalho do card de assembleia (`flex-wrap` — a fileira de
+  botões de ação quebra pra baixo em telas estreitas); item da lista de
+  documentos (`flex-wrap`). Auditoria final: 0px de overflow nas 25
+  combinações página/papel testadas em 390×844.
+- **PWA instalável**: `public/icons/icon.svg` refeito com a marca real do
+  produto (gradiente `#1FB389→#0E7F60` + glifo Home do lucide, mesmo
+  visual do `Wordmark`) — o anterior era resto do scaffold (caixa cinza
+  com "C"). Gerados `icon-192.png`/`icon-512.png` (cantos transparentes,
+  purpose `any`), `icon-maskable-512.png` (full-bleed, glifo na zona
+  segura de 80%, purpose `maskable`) e `apple-touch-icon.png` (180px,
+  opaco — iOS não lê o manifest, exige o `<link rel="apple-touch-icon">`).
+  Os PNGs foram renderizados a partir do SVG com o próprio Chromium
+  (screenshot) — se o SVG mudar, regenerar do mesmo jeito, não editar os
+  PNGs à mão. `manifest.json` atualizado (cores do tema escuro `#0b0d11`,
+  `scope`, `orientation: portrait`, os 4 ícones); `layout.tsx` ganhou
+  `appleWebApp` (capable/title/statusBarStyle) e `viewport` explícito
+  (`device-width`, `initialScale: 1`, `viewportFit: cover`). Verificado
+  em navegador real: manifest linkado, 4 ícones respondendo 200,
+  `apple-mobile-web-app-capable`, theme-color e service worker ativo —
+  os critérios de instalabilidade do Chrome (manifest completo + PNG
+  192/512 + SW com fetch handler) todos presentes.
+
+## Perfil de gestão do SINDICO (paridade com a ADMINISTRADORA no próprio condomínio)
+Pedido do usuário: o /perfil do síndico deve ser como o da ADM, só que
+restrito ao condomínio dele, com as mesmas visualizações e ações.
+- Backend — RBAC expandido (o RolesGuard já restringe SINDICO ao próprio
+  condomínio em todas estas rotas, então liberar o papel não abre tenant):
+  - `PATCH /condominios/:id`: + SINDICO, **mas `permissoesSindico` só pode
+    ser alterada por um vínculo ADMINISTRADORA da administradora DESTE
+    condomínio** (checagem em `CondominiosService.atualizar` contra
+    `cond.administradoraId`) — senão o síndico desbloquearia as próprias
+    restrições. Não basta ter "algum" vínculo ADMINISTRADORA: o caso de
+    papel duplo (síndico daqui + administradora de OUTRA carteira) foi
+    encontrado pela skill checar-isolamento-tenant na primeira versão desta
+    mudança (que checava só o papel) e corrigido antes de concluir — teste
+    nomeado em `condominios-gestao.integration-spec.ts`.
+  - Membros (`GET/POST/DELETE /condominios/:id/membros...`): + SINDICO.
+    `adicionarMembro` não recebe mais a administradoraId do vínculo do
+    autor — deriva de `cond.administradoraId` (síndico não tem
+    administradoraId própria; e o valor correto é o da administradora do
+    condomínio, nunca a do autor).
+  - Unidades (`POST/PATCH/DELETE`): + SINDICO.
+  - Continuam exclusivos da ADM: criar condomínio, excluir condomínio e
+    editar permissoesSindico.
+- **Bug pré-existente corrigido, achado pelo teste novo**:
+  `listarMembros` filtrava só `vinculoUsuario.condominioId`, mas vínculo de
+  CONDOMINO normalmente só carrega `unidadeId` (seed, login) — a lista de
+  membros da ADM já vinha SEM nenhum condômino do seed. Corrigido com
+  `OR: [{ condominioId }, { unidade: { condominioId } }]` (os dois ramos
+  pinados ao mesmo condominioId da rota).
+- Frontend: `/perfil` (`RequireRole` agora ADMINISTRADORA+SINDICO — estava
+  ADM-only e redirecionava o síndico pro dashboard) renderiza pro síndico o
+  MESMO `CardCondominioCompleto` da ADM (dados, permissões, membros,
+  unidades, dados complementares), só do condomínio dele, via nova prop
+  `ehAdministradora` que esconde: botão de excluir condomínio, toggles de
+  permissão no modo edição (visão read-only das permissões continua — útil
+  pro síndico saber o que pode) e o envio de `permissoesSindico` no PATCH.
+  Sem `administradoraId`, o root `PerfilContent` resolve o condomínio do
+  vínculo SINDICO e carrega via `GET /condominios/:id`. CONDOMINO vê
+  mensagem informativa (antes via "conta não vinculada a uma
+  administradora", enganoso).
+- Novo spec `condominios-gestao.integration-spec.ts` (13 testes): PATCH
+  cadastral pelo síndico, bloqueio de permissoesSindico (síndico puro e
+  papel duplo), cross-tenant 403 em PATCH/membros/unidades, condômino 403,
+  fluxo completo de membro (add com herança de administradoraId + remove) e
+  de unidade (cria + exclui), DELETE de condomínio negado pro síndico.
+- Validação: 126/126 testes de integração, 15/15 de componente, tsc/lint
+  limpos nos dois apps; fluxo real no navegador como síndico (editar
+  telefone, listar/adicionar/remover membro, criar/excluir unidade, sem
+  toggles de permissão na edição) + persistência conferida via API.
+
+## Bot do WhatsApp v2 — menu completo do CONDOMINO (fluxos multi-turno)
+Expansão do módulo bot (Prompt 9) pra cobrir o menu completo pedido pelo
+usuário, implementado primeiro pro papel CONDOMINO. As regras inegociáveis
+do módulo continuam TODAS de pé: identidade exclusivamente do
+`telefoneWhatsapp`, denylist antes de qualquer palavra-chave, motor de
+regras (não LLM), assinatura HMAC validada antes de qualquer payload.
+- **Menu numerado** (`bot/menu.ts`, contrato com `OPCAO_MENU` e o switch do
+  BotService): 1 financeiro da unidade, 2 resultados de assembleias,
+  3 reservar área comum, 4 abrir chamado, 5 meus chamados, 6 última
+  advertência, 7 ações administrativas, 8 últimos avisos, 9 2ª via de
+  boleto. Saudações ("oi", "menu"...) apresentam o menu; número solto 1-9
+  escolhe a opção; palavras-chave também funcionam.
+- **Fluxos multi-turno** (novo campo `ConversaBot.fluxo Json?`, migração
+  `20260709103534_bot_fluxos_condomino`; shape em `bot/fluxos/tipos.ts`,
+  expira em 30min de inatividade; NUNCA é fonte de autoridade):
+  - Reserva (`fluxos/fluxo-reserva.service.ts`): área (lista numerada, ou
+    "reservar salão" pula direto) → dia ("hoje"/"amanhã"/DD/MM) → horários
+    livres reais fatiados pela duração mínima (máx. 12 slots) →
+    confirmação. A criação delega pra `ReservasService.criar` (exportado de
+    `ReservasModule` pra isso) com um `AuthenticatedUser` CONDOMINO montado
+    da identidade — MESMAS regras da API (conflito com corrida coberta,
+    antecedência, horário de funcionamento, unidade própria), nunca
+    reimplementadas. A disponibilidade também vem de
+    `ReservasService.disponibilidade`. `TenantPrismaClient` é alias de tipo
+    de `PrismaService`, então o client cru passa direto (padrão do módulo:
+    isolamento pela identidade, não pelo filtro físico).
+  - Chamado (`fluxos/fluxo-chamado.service.ts`): pede a descrição → cria
+    `PENDENTE_TRIAGEM` (mesmo status de CONDOMINO no app), categoria OUTRO
+    fixa (bot não classifica; triagem do síndico ajusta). Texto vira só
+    titulo/descricao — dado inerte.
+  - Comandos globais valem dentro de fluxo: *cancelar* encerra, *menu*
+    volta; denylist roda ANTES do fluxo (frase de manipulação nunca vira
+    "descrição de chamado" — teste dedicado).
+- **Consultas** (todas pinadas à identidade): financeiro é DA UNIDADE
+  (a pagar/em atraso/pago no ano/saldo devedor/próximo vencimento) — totais
+  do condomínio são SINDICO/ADM-only por regra de domínio, a versão pra
+  esses papéis fica pra próxima etapa; assembleias = até 2 REALIZADAS com
+  deliberações + próxima AGENDADA; meus chamados = mesma visibilidade de
+  CONDOMINO da API (abertos por ele OU da unidade); advertência = só da
+  própria unidade; ações administrativas = 3 últimas do condomínio;
+  avisos = gerais + direcionados à própria unidade (nunca de outra);
+  boleto = placeholder deliberado ("em implantação") a pedido do usuário,
+  MAS envia o `linkPagamento` real se a cobrança tiver um.
+- `reconhecerIntencao` reescrito (tipos novos; `SALDO`→`FINANCEIRO`,
+  `CHAMADO`→`ABRIR_CHAMado`/`MEUS_CHAMADOS`); denylist intocado e agora
+  também exportado como `ehTextoSuspeito` pro BotService usar em fluxos.
+  Pegadinhas registradas: "ª" não decompõe pra "a" em NFD (regex de boleto
+  lista `[ªa]` literal); `\b` em "acao"/"acoes" evita falso positivo com
+  "reclamacao"/"informacao".
+- **Semântica de erro do webhook**: exceção ao GERAR resposta → resposta
+  neutra ao usuário (nunca 500); falha ao ENVIAR via Cloud API → logada
+  (sem o texto) e o webhook responde 200 mesmo assim — um 500 faria a Meta
+  reenviar o payload e REPROCESSAR a mensagem (ex: chamado duplicado). Em
+  dev sem credenciais reais da Meta, o envio falha de propósito e é só
+  logado.
+- Validação: 135/135 testes de integração (spec do bot reescrito — fluxo
+  de reserva completo criando Reserva real, chamado criado com triagem,
+  negativos de tenant pra área/assembleia/ação/aviso/advertência,
+  manipulação no meio de fluxo) + 43 unitários; conversa completa dirigida
+  ao vivo contra o dev server via webhook assinado (telefone do
+  condomino1 do seed): as 10 interações responderam certo e a reserva foi
+  criada no banco. Skill checar-isolamento-tenant: nenhuma violação (o
+  único `findUnique` sem pin — areaComumId vindo do estado do fluxo — é
+  seguro por construção, estado só escrito pelo bot, e revalidado na
+  escrita pelo ReservasService).
+- **SUGESTÃO** (aberta): o webhook não deduplica por `message.id` (wamid) —
+  se a Meta reenviar o mesmo evento (timeout de rede), a mensagem é
+  processada de novo. Mitigado pelo 200-mesmo-com-falha-de-envio acima;
+  dedup por wamid fica como melhoria futura.
+- **Próxima etapa combinada**: versões do bot pra SINDICO/ADMINISTRADORA
+  (financeiro do condomínio inteiro etc.) e ação concreta de 2ª via quando
+  o módulo de boletos existir.
 
 ## Definição de "pronto"
 Uma tarefa só está concluída quando: os testes relevantes passam,

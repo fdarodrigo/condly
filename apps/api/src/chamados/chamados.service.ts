@@ -56,13 +56,16 @@ export class ChamadosService {
       }
     }
 
-    const status: StatusChamado = abrePorSindico ? 'ABERTO' : 'PENDENTE_TRIAGEM';
+    const abrePorAdm = usuario.vinculos.some((v) => v.papel === 'ADMINISTRADORA');
+    const status: StatusChamado = abrePorSindico || abrePorAdm ? 'ABERTO' : 'PENDENTE_TRIAGEM';
 
     const chamado = await tenantPrisma.chamado.create({
       data: {
         condominioId,
         unidadeId,
         abertoPorId: usuario.usuarioId,
+        titulo: dto.titulo,
+        descricao: dto.descricao,
         categoria: dto.categoria,
         status,
       },
@@ -100,6 +103,11 @@ export class ChamadosService {
 
     return tenantPrisma.chamado.findMany({
       where: { condominioId, ...(status ? { status } : {}), ...filtroVisibilidade },
+      include: {
+        unidade: { select: { id: true, identificador: true } },
+        abertoPor: { select: { nome: true } },
+        responsavel: { select: { nome: true } },
+      },
       orderBy: { criadoEm: 'desc' },
     });
   }
@@ -152,6 +160,8 @@ export class ChamadosService {
       where: { id: chamadoId },
       data: {
         ...(dto.status ? { status: dto.status } : {}),
+        ...(dto.titulo ? { titulo: dto.titulo } : {}),
+        ...(dto.descricao !== undefined ? { descricao: dto.descricao } : {}),
         ...(dto.categoria ? { categoria: dto.categoria } : {}),
         ...(dto.responsavelId !== undefined ? { responsavelId: dto.responsavelId } : {}),
         ...(ehReabertura ? { reabertoEm: new Date() } : {}),
@@ -171,6 +181,12 @@ export class ChamadosService {
     }
 
     return chamadoAtualizado;
+  }
+
+  async remover(chamadoId: string, tenantPrisma: TenantPrismaClient) {
+    const chamado = await tenantPrisma.chamado.findUnique({ where: { id: chamadoId } });
+    if (!chamado) throw new NotFoundException('Chamado não encontrado.');
+    await tenantPrisma.chamado.delete({ where: { id: chamadoId } });
   }
 
   private emitirMudancaDeStatus(

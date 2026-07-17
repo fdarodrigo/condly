@@ -35,6 +35,21 @@ export class DocumentosService {
     return { uploadUrl: url, documento };
   }
 
+  async criarDocumentoComArquivo(
+    condominioId: string,
+    dto: CriarUploadUrlDto,
+    arquivo: Express.Multer.File,
+    tenantPrisma: TenantPrismaClient,
+  ) {
+    const key = `documentos/${condominioId}/${randomUUID()}-${sanitizarNomeArquivo(dto.nomeArquivo ?? arquivo.originalname)}`;
+
+    await this.r2Client.uploadDireto(key, arquivo.buffer, arquivo.mimetype);
+
+    return tenantPrisma.documento.create({
+      data: { condominioId, tipo: dto.tipo, visibilidade: dto.visibilidade, urlArquivo: key },
+    });
+  }
+
   /**
    * ADMINISTRADORA e SINDICO (do próprio condomínio) veem todos os
    * documentos. CONDOMINO só vê os de visibilidade TODOS — documentos

@@ -1,11 +1,42 @@
 import { reconhecerIntencao } from './reconhecer-intencao';
 
 describe('reconhecerIntencao', () => {
-  describe('SALDO', () => {
-    it.each([['saldo'], ['Qual o meu saldo?'], ['quanto devo esse mês'], ['Quanto Devo?']])(
-      'reconhece "%s" como SALDO',
+  describe('MENU e opções numéricas', () => {
+    it.each([['oi'], ['Olá'], ['menu'], ['bom dia'], ['ajuda']])(
+      'reconhece "%s" como MENU',
       (texto) => {
-        expect(reconhecerIntencao(texto)).toEqual({ tipo: 'SALDO' });
+        expect(reconhecerIntencao(texto)).toEqual({ tipo: 'MENU' });
+      },
+    );
+
+    it.each([
+      ['1', 1],
+      [' 5 ', 5],
+      ['9', 9],
+    ])('reconhece "%s" como OPCAO_MENU %i', (texto, numero) => {
+      expect(reconhecerIntencao(texto)).toEqual({ tipo: 'OPCAO_MENU', numero });
+    });
+
+    it('número fora do menu (0, 10) não é opção', () => {
+      expect(reconhecerIntencao('0')).toEqual({ tipo: 'DESCONHECIDA' });
+      expect(reconhecerIntencao('10')).toEqual({ tipo: 'DESCONHECIDA' });
+    });
+  });
+
+  describe('FINANCEIRO', () => {
+    it.each([['saldo'], ['Qual o meu saldo?'], ['quanto devo esse mês'], ['financeiro']])(
+      'reconhece "%s" como FINANCEIRO',
+      (texto) => {
+        expect(reconhecerIntencao(texto)).toEqual({ tipo: 'FINANCEIRO' });
+      },
+    );
+  });
+
+  describe('BOLETO (antes de financeiro)', () => {
+    it.each([['boleto'], ['segunda via do boleto'], ['2a via'], ['quero a 2ª via']])(
+      'reconhece "%s" como BOLETO',
+      (texto) => {
+        expect(reconhecerIntencao(texto)).toEqual({ tipo: 'BOLETO' });
       },
     );
   });
@@ -21,26 +52,46 @@ describe('reconhecerIntencao', () => {
         areaComum: 'salão de festas',
       });
     });
-
-    it('extrai o nome da área comum mesmo sem artigo', () => {
-      expect(reconhecerIntencao('reservar churrasqueira para sábado')).toEqual({
-        tipo: 'RESERVAR',
-        areaComum: 'churrasqueira para sábado',
-      });
-    });
   });
 
-  describe('CHAMADO', () => {
-    it.each([['chamado'], ['quero abrir um chamado'], ['Preciso de um chamado pro síndico']])(
-      'reconhece "%s" como CHAMADO',
+  describe('chamados', () => {
+    it.each([['chamado'], ['quero abrir um chamado']])(
+      'reconhece "%s" como ABRIR_CHAMADO',
       (texto) => {
-        expect(reconhecerIntencao(texto)).toEqual({ tipo: 'CHAMADO' });
+        expect(reconhecerIntencao(texto)).toEqual({ tipo: 'ABRIR_CHAMADO' });
+      },
+    );
+
+    it.each([['meus chamados'], ['quero acompanhar meu chamado']])(
+      'reconhece "%s" como MEUS_CHAMADOS',
+      (texto) => {
+        expect(reconhecerIntencao(texto)).toEqual({ tipo: 'MEUS_CHAMADOS' });
       },
     );
   });
 
+  describe('demais consultas', () => {
+    it('assembleias', () => {
+      expect(reconhecerIntencao('resultados das assembleias')).toEqual({ tipo: 'ASSEMBLEIAS' });
+    });
+    it('advertência', () => {
+      expect(reconhecerIntencao('minha última advertência')).toEqual({ tipo: 'ADVERTENCIA' });
+    });
+    it('ações administrativas', () => {
+      expect(reconhecerIntencao('ações administrativas')).toEqual({
+        tipo: 'ACOES_ADMINISTRATIVAS',
+      });
+    });
+    it('avisos', () => {
+      expect(reconhecerIntencao('últimos avisos')).toEqual({ tipo: 'AVISOS' });
+    });
+    it('cancelar', () => {
+      expect(reconhecerIntencao('cancelar')).toEqual({ tipo: 'CANCELAR' });
+    });
+  });
+
   describe('DESCONHECIDA (fora de escopo)', () => {
-    it.each([['oi'], ['bom dia'], ['qual o horário da piscina'], ['vocês fazem entrega'], ['']])(
+    it.each([['qual o horário da piscina'], ['vocês fazem entrega'], ['']])(
       'reconhece "%s" como DESCONHECIDA — resposta padrão, nunca inventada',
       (texto) => {
         expect(reconhecerIntencao(texto)).toEqual({ tipo: 'DESCONHECIDA' });
@@ -80,10 +131,10 @@ describe('reconhecerIntencao', () => {
     });
 
     it('mencionar um número de unidade SEM frase de injeção não muda o tipo da intenção (a identidade real é resolvida pelo telefone, não pelo texto — ver BotService)', () => {
-      // Reconhecida como SALDO normalmente — o ponto de segurança é que o
-      // BotService, ao tratar essa intenção, NUNCA lê esse "12" do texto
-      // pra decidir de qual unidade buscar a cobrança.
-      expect(reconhecerIntencao('qual o saldo da unidade 12?')).toEqual({ tipo: 'SALDO' });
+      // Reconhecida como FINANCEIRO normalmente — o ponto de segurança é que
+      // o BotService, ao tratar essa intenção, NUNCA lê esse "12" do texto
+      // pra decidir de qual unidade buscar os dados.
+      expect(reconhecerIntencao('qual o saldo da unidade 12?')).toEqual({ tipo: 'FINANCEIRO' });
     });
   });
 });

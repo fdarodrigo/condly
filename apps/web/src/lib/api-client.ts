@@ -13,8 +13,9 @@ export class ApiError extends Error {
 }
 
 interface ApiFetchOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
+  formData?: FormData;
   // POST /auth/login também responde 401 pra credencial inválida — nesse
   // caso um 401 não significa "sessão expirada", então o LoginForm pula o
   // comportamento padrão (limpar token + redirecionar) e trata a mensagem
@@ -32,13 +33,19 @@ interface ApiFetchOptions {
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const token = obterAccessToken();
 
+  const isFormData = options.formData !== undefined;
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: options.method ?? 'GET',
     headers: {
-      ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      // FormData: deixa o browser definir Content-Type com o boundary correto
+      ...(!isFormData && options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    body: isFormData
+      ? options.formData
+      : options.body !== undefined
+        ? JSON.stringify(options.body)
+        : undefined,
   });
 
   if (response.status === 401 && !options.ignorarRedirecionamento401) {

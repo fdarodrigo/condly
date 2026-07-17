@@ -20,7 +20,7 @@ describe('Módulo reservas', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let fixtures: Awaited<ReturnType<typeof criarFixtures>>;
-  let areaComum1: { id: string };
+  let areaComum1: { id: string; regrasReserva: unknown };
   let areaComum2: { id: string };
   let tokenSindico: string;
   let tokenCondomino: string;
@@ -309,7 +309,13 @@ describe('Módulo reservas', () => {
         .set('Authorization', `Bearer ${tokenCondomino}`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([{ id: areaComum1.id, nome: 'Salão de festas' }]);
+      expect(res.body).toEqual([
+        {
+          id: areaComum1.id,
+          nome: 'Salão de festas',
+          regrasReserva: areaComum1.regrasReserva,
+        },
+      ]);
     });
 
     it('nunca lista a área comum de outro condomínio', async () => {

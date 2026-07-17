@@ -1,12 +1,18 @@
 export type Intencao =
-  | { tipo: 'SALDO' }
+  | { tipo: 'MENU' }
+  | { tipo: 'OPCAO_MENU'; numero: number }
+  | { tipo: 'CANCELAR' }
+  | { tipo: 'FINANCEIRO' }
+  | { tipo: 'ASSEMBLEIAS' }
   | { tipo: 'RESERVAR'; areaComum: string | null }
-  | { tipo: 'CHAMADO' }
+  | { tipo: 'ABRIR_CHAMADO' }
+  | { tipo: 'MEUS_CHAMADOS' }
+  | { tipo: 'ADVERTENCIA' }
+  | { tipo: 'ACOES_ADMINISTRATIVAS' }
+  | { tipo: 'AVISOS' }
+  | { tipo: 'BOLETO' }
   | { tipo: 'DESCONHECIDA' };
 
-const PALAVRAS_SALDO = ['saldo', 'quanto devo'];
-const PALAVRA_RESERVAR = 'reservar';
-const PALAVRA_CHAMADO = 'chamado';
 const PALAVRAS_FUNCIONAIS = ['o', 'a', 'um', 'uma', 'para', 'pra', 'do', 'da', 'no', 'na'];
 
 // Frases de injeção/engenharia social ("ignore as regras anteriores",
@@ -18,8 +24,8 @@ const PALAVRAS_FUNCIONAIS = ['o', 'a', 'um', 'uma', 'para', 'pra', 'do', 'da', '
 // resolvido contra o banco (ver BotService), nunca de uma afirmação no
 // texto — isto aqui é só a primeira camada (heurística, pega frases
 // óbvias de tentativa de manipulação); a camada que realmente garante a
-// regra é estrutural: nenhum handler de intenção abaixo jamais lê um
-// número de unidade ou uma afirmação de papel do texto da mensagem.
+// regra é estrutural: nenhum handler de intenção jamais lê um número de
+// unidade ou uma afirmação de papel do texto da mensagem.
 const PADROES_SUSPEITOS: RegExp[] = [
   // Roda sobre o texto JÁ normalizado (sem acento) — por isso "instruc",
   // não "instruç"/"instrução": cobre singular e plural ("instrução" e
@@ -31,6 +37,16 @@ const PADROES_SUSPEITOS: RegExp[] = [
   /\bacesso\s+total\b/,
   /\bmodo\s+(admin|administrador|desenvolvedor)\b/,
 ];
+
+/**
+ * Detecta tentativa de manipulação — exportada porque o BotService precisa
+ * rodar esta checagem também sobre mensagens que alimentam um fluxo
+ * multi-turno em andamento (onde o texto NÃO passa por reconhecerIntencao,
+ * já que é uma resposta livre tipo a descrição de um chamado).
+ */
+export function ehTextoSuspeito(textoOriginal: string): boolean {
+  return PADROES_SUSPEITOS.some((padrao) => padrao.test(normalizarParaPadroes(textoOriginal)));
+}
 
 function normalizarParaPadroes(texto: string): string {
   return texto
@@ -46,7 +62,7 @@ function normalizarParaPadroes(texto: string): string {
  * banco e a maioria dos nomes em português tem acento ("Salão de Festas").
  */
 function extrairNomeAreaComum(textoOriginal: string): string | null {
-  const match = /reservar\s+(.+)/i.exec(textoOriginal);
+  const match = /reservar?\s+(.+)/i.exec(textoOriginal);
   if (!match) {
     return null;
   }
@@ -66,30 +82,81 @@ function extrairNomeAreaComum(textoOriginal: string): string | null {
   return nome.length > 0 ? nome : null;
 }
 
+// Saudações/pedidos de menu: comparação por igualdade (não substring) pra
+// "oi" não capturar qualquer frase que contenha essas letras.
+const SAUDACOES = ['oi', 'ola', 'menu', 'ajuda', 'inicio', 'comecar', 'opcoes', 'oi!', 'ola!'];
+const SAUDACOES_PREFIXO = ['bom dia', 'boa tarde', 'boa noite'];
+
 /**
  * Motor de intenções por palavra-chave — deliberadamente simples (regras,
  * não um LLM, ver docs/stack.md seção 3.2). Nunca lança erro: qualquer
  * mensagem que não bata em nenhuma regra (incluindo as suspeitas) vira
- * DESCONHECIDA, que o BotService traduz pra uma resposta padrão.
+ * DESCONHECIDA, que o BotService traduz pro menu de opções.
  */
 export function reconhecerIntencao(textoOriginal: string): Intencao {
-  const textoMinusculo = textoOriginal.toLowerCase();
-  const textoParaPadroes = normalizarParaPadroes(textoOriginal);
+  const textoNormalizado = normalizarParaPadroes(textoOriginal);
 
-  if (PADROES_SUSPEITOS.some((padrao) => padrao.test(textoParaPadroes))) {
+  if (ehTextoSuspeito(textoOriginal)) {
     return { tipo: 'DESCONHECIDA' };
   }
 
-  if (PALAVRAS_SALDO.some((palavra) => textoMinusculo.includes(palavra))) {
-    return { tipo: 'SALDO' };
+  // Resposta numérica solta (1-9) = escolha de opção do menu. Só chega aqui
+  // quando NÃO há fluxo multi-turno ativo — dentro de um fluxo, o BotService
+  // consome o número como resposta do fluxo antes de chamar este motor.
+  const numeroSolto = /^\s*([1-9])\s*$/.exec(textoNormalizado);
+  if (numeroSolto) {
+    return { tipo: 'OPCAO_MENU', numero: Number(numeroSolto[1]) };
   }
 
-  if (textoMinusculo.includes(PALAVRA_RESERVAR)) {
+  if (textoNormalizado.trim() === 'cancelar' || textoNormalizado.trim() === 'cancela') {
+    return { tipo: 'CANCELAR' };
+  }
+
+  const compacto = textoNormalizado.trim();
+  if (SAUDACOES.includes(compacto) || SAUDACOES_PREFIXO.some((s) => compacto.startsWith(s))) {
+    return { tipo: 'MENU' };
+  }
+
+  // Boleto ANTES de financeiro: "segunda via do boleto" não é a consulta de
+  // saldo. O "ª" (ordinal feminino) não decompõe pra "a" na normalização
+  // NFD, por isso entra literal na classe de caracteres.
+  if (/boleto|segunda via|2[ªa]?\s*via/.test(textoNormalizado)) {
+    return { tipo: 'BOLETO' };
+  }
+
+  if (/financeiro|saldo|quanto devo|cobranca/.test(textoNormalizado)) {
+    return { tipo: 'FINANCEIRO' };
+  }
+
+  if (/assembleia|deliberac/.test(textoNormalizado)) {
+    return { tipo: 'ASSEMBLEIAS' };
+  }
+
+  // "meus chamados"/"acompanhar" ANTES de "chamado" (que abre um novo).
+  if (/meus chamados|acompanhar/.test(textoNormalizado)) {
+    return { tipo: 'MEUS_CHAMADOS' };
+  }
+
+  if (textoNormalizado.includes('chamado')) {
+    return { tipo: 'ABRIR_CHAMADO' };
+  }
+
+  if (/reserv/.test(textoNormalizado)) {
     return { tipo: 'RESERVAR', areaComum: extrairNomeAreaComum(textoOriginal) };
   }
 
-  if (textoMinusculo.includes(PALAVRA_CHAMADO)) {
-    return { tipo: 'CHAMADO' };
+  if (/advertencia/.test(textoNormalizado)) {
+    return { tipo: 'ADVERTENCIA' };
+  }
+
+  // \b evita falso positivo com palavras que CONTÊM "acao" ("reclamacao",
+  // "informacao"...) — só "ação"/"ações" como palavra inteira conta.
+  if (/\bacoes\b|\bacao\b/.test(textoNormalizado)) {
+    return { tipo: 'ACOES_ADMINISTRATIVAS' };
+  }
+
+  if (textoNormalizado.includes('aviso')) {
+    return { tipo: 'AVISOS' };
   }
 
   return { tipo: 'DESCONHECIDA' };

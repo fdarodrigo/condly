@@ -24,4 +24,10 @@ export class FakeR2Client implements R2Client {
     this.chamadasDownload.push({ key, expiresInSeconds });
     return `https://fake-r2.example.com/download/${key}?expiresIn=${expiresInSeconds}`;
   }
+
+  // Assinatura com menos parâmetros que a interface é aceita pelo TS
+  // (tipagem estrutural) — evita parâmetros não usados no fake.
+  async uploadDireto(): Promise<void> {
+    // no-op em testes
+  }
 }

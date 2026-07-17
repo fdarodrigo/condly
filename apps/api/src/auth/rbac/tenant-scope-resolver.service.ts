@@ -86,6 +86,76 @@ export class TenantScopeResolverService {
       };
     }
 
+    if (params.enqueteId) {
+      const enquete = await this.prisma.enquete.findUnique({
+        where: { id: params.enqueteId },
+        include: { condominio: true },
+      });
+      if (!enquete) {
+        throw new NotFoundException('Enquete não encontrada.');
+      }
+      return {
+        administradoraId: enquete.condominio.administradoraId,
+        condominioId: enquete.condominioId,
+      };
+    }
+
+    if (params.acaoId) {
+      const acao = await this.prisma.acaoAdministrativa.findUnique({
+        where: { id: params.acaoId },
+        include: { condominio: true },
+      });
+      if (!acao) {
+        throw new NotFoundException('Ação administrativa não encontrada.');
+      }
+      return {
+        administradoraId: acao.condominio.administradoraId,
+        condominioId: acao.condominioId,
+      };
+    }
+
+    if (params.avisoId) {
+      const aviso = await this.prisma.aviso.findUnique({
+        where: { id: params.avisoId },
+        include: { condominio: true },
+      });
+      if (!aviso) {
+        throw new NotFoundException('Aviso não encontrado.');
+      }
+      return {
+        administradoraId: aviso.condominio.administradoraId,
+        condominioId: aviso.condominioId,
+      };
+    }
+
+    if (params.assembleiaId) {
+      const assembleia = await this.prisma.assembleia.findUnique({
+        where: { id: params.assembleiaId },
+        include: { condominio: true },
+      });
+      if (!assembleia) {
+        throw new NotFoundException('Assembleia não encontrada.');
+      }
+      return {
+        administradoraId: assembleia.condominio.administradoraId,
+        condominioId: assembleia.condominioId,
+      };
+    }
+
+    if (params.advertenciaId) {
+      const advertencia = await this.prisma.advertencia.findUnique({
+        where: { id: params.advertenciaId },
+        include: { condominio: true },
+      });
+      if (!advertencia) {
+        throw new NotFoundException('Advertência não encontrada.');
+      }
+      return {
+        administradoraId: advertencia.condominio.administradoraId,
+        condominioId: advertencia.condominioId,
+      };
+    }
+
     if (params.condominioId) {
       const condominio = await this.prisma.condominio.findUnique({
         where: { id: params.condominioId },

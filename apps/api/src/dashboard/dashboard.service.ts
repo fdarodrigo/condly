@@ -6,6 +6,18 @@ const CHAMADO_STATUS_ABERTOS = ['PENDENTE_TRIAGEM', 'ABERTO', 'EM_ANDAMENTO'] as
 const TOP_N_CONDOMINIOS_MAIS_CHAMADOS = 5;
 const PROXIMOS_N_SERVICOS = 5;
 const RESERVAS_PROXIMOS_DIAS = 7;
+const SERVICOS_A_VENCER_DIAS = 30;
+
+const NOMES_FLAGS_UNIDADE: Record<string, string> = {
+  bebeRecemNascido: 'Bebê recém-nascido',
+  trabalhadorNoturno: 'Trabalhador noturno',
+  pessoasIdosas: 'Pessoas idosas',
+  pets: 'Pets',
+  pessoasAutismo: 'Autismo/TEA',
+  estrangeiros: 'Estrangeiros',
+  mobilidadeReduzida: 'Mobilidade reduzida',
+  locacaoCurtaTemporada: 'Aluguel temporada',
+};
 
 function arredondar(valor: number): number {
   return Math.round(valor * 100) / 100;
@@ -29,6 +41,10 @@ interface LinhaRankingFinanceiro {
   totalRecebidoNoMes: number;
   totalAReceberNoMes: number;
   totalEmAtraso: number;
+  totalAtraso1a30d: number;
+  totalAtraso31a60d: number;
+  totalAtraso61a90d: number;
+  totalAtraso90dMais: number;
 }
 
 @Injectable()
@@ -115,6 +131,16 @@ export class DashboardService {
     const agora = new Date();
     const { inicioMes, inicioProximoMes, inicioDeHoje } = limitesDoMes(agora);
 
+    // Datas de corte para as faixas de inadimplência
+    const ha30Dias = new Date(inicioDeHoje.getTime() - 30 * 86_400_000);
+    const ha60Dias = new Date(inicioDeHoje.getTime() - 60 * 86_400_000);
+    const ha90Dias = new Date(inicioDeHoje.getTime() - 90 * 86_400_000);
+    const em30Dias = new Date(inicioDeHoje.getTime() + SERVICOS_A_VENCER_DIAS * 86_400_000);
+
+    // Query 1: totais financeiros + faixas de inadimplência por condomínio.
+    // As faixas de aging são colunas adicionais no mesmo SELECT, sem query extra.
+    // ATENÇÃO: $queryRaw não passa pelo filtro de tenant-prisma.ts — o
+    // WHERE manual é a única proteção aqui, ver CLAUDE.md.
     const rankingFinanceiro = await this.prisma.$queryRaw<LinhaRankingFinanceiro[]>`
       SELECT
         cond.id AS "condominioId",
@@ -130,7 +156,27 @@ export class DashboardService {
         COALESCE(SUM(CASE
           WHEN cb."status" = 'ATRASADO' OR (cb."status" = 'PENDENTE' AND cb."vencimento" < ${inicioDeHoje})
           THEN cb."valor" ELSE 0
-        END), 0) AS "totalEmAtraso"
+        END), 0) AS "totalEmAtraso",
+        COALESCE(SUM(CASE
+          WHEN (cb."status" = 'ATRASADO' OR (cb."status" = 'PENDENTE' AND cb."vencimento" < ${inicioDeHoje}))
+            AND cb."vencimento" >= ${ha30Dias}
+          THEN cb."valor" ELSE 0
+        END), 0) AS "totalAtraso1a30d",
+        COALESCE(SUM(CASE
+          WHEN (cb."status" = 'ATRASADO' OR (cb."status" = 'PENDENTE' AND cb."vencimento" < ${inicioDeHoje}))
+            AND cb."vencimento" >= ${ha60Dias} AND cb."vencimento" < ${ha30Dias}
+          THEN cb."valor" ELSE 0
+        END), 0) AS "totalAtraso31a60d",
+        COALESCE(SUM(CASE
+          WHEN (cb."status" = 'ATRASADO' OR (cb."status" = 'PENDENTE' AND cb."vencimento" < ${inicioDeHoje}))
+            AND cb."vencimento" >= ${ha90Dias} AND cb."vencimento" < ${ha60Dias}
+          THEN cb."valor" ELSE 0
+        END), 0) AS "totalAtraso61a90d",
+        COALESCE(SUM(CASE
+          WHEN (cb."status" = 'ATRASADO' OR (cb."status" = 'PENDENTE' AND cb."vencimento" < ${inicioDeHoje}))
+            AND cb."vencimento" < ${ha90Dias}
+          THEN cb."valor" ELSE 0
+        END), 0) AS "totalAtraso90dMais"
       FROM "Condominio" cond
       LEFT JOIN "Unidade" u ON u."condominioId" = cond.id
       LEFT JOIN "Cobranca" cb ON cb."unidadeId" = u.id
@@ -141,6 +187,7 @@ export class DashboardService {
     const condominioIds = rankingFinanceiro.map((linha) => linha.condominioId);
     const nomePorCondominioId = new Map(rankingFinanceiro.map((l) => [l.condominioId, l.nome]));
 
+    // Query 2: chamados abertos por condomínio (groupBy, via tenantPrisma — 2ª camada)
     const chamadosPorCondominio = await tenantPrisma.chamado.groupBy({
       by: ['condominioId'],
       where: { condominioId: { in: condominioIds }, status: { not: 'RESOLVIDO' } },
@@ -149,6 +196,14 @@ export class DashboardService {
     const chamadosPendentesPorCondominioId = new Map(
       chamadosPorCondominio.map((linha) => [linha.condominioId, linha._count._all]),
     );
+
+    // Query 3: serviços periódicos a vencer nos próximos 30 dias (tenantPrisma
+    // filtra automaticamente por condominio.administradoraId via tenant-prisma.ts)
+    const servicosAVencer = await tenantPrisma.servicoPeriodico.findMany({
+      where: { proximoVencimento: { gte: inicioDeHoje, lte: em30Dias } },
+      include: { condominio: { select: { id: true, nome: true } } },
+      orderBy: { proximoVencimento: 'asc' },
+    });
 
     const rankingArrecadacao = rankingFinanceiro
       .map((linha) => ({
@@ -188,11 +243,100 @@ export class DashboardService {
       0,
     );
 
+    // Totais por faixa de inadimplência agregados em toda a carteira
+    const inadimplenciaPorFaixa = {
+      de1a30d: arredondar(rankingFinanceiro.reduce((s, l) => s + Number(l.totalAtraso1a30d), 0)),
+      de31a60d: arredondar(rankingFinanceiro.reduce((s, l) => s + Number(l.totalAtraso31a60d), 0)),
+      de61a90d: arredondar(rankingFinanceiro.reduce((s, l) => s + Number(l.totalAtraso61a90d), 0)),
+      de90dMais: arredondar(
+        rankingFinanceiro.reduce((s, l) => s + Number(l.totalAtraso90dMais), 0),
+      ),
+    };
+
     return {
       totalChamadosAbertos,
       rankingArrecadacao,
       rankingInadimplencia,
       condominiosComMaisChamadosPendentes,
+      inadimplenciaPorFaixa,
+      servicosAVencer,
     };
+  }
+
+  async metricasUnidades(condominioId: string, tenantPrisma: TenantPrismaClient) {
+    const agora = new Date();
+    const inicioDeHoje = new Date(
+      Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), agora.getUTCDate()),
+    );
+
+    const unidades = await tenantPrisma.unidade.findMany({
+      where: { condominioId },
+      include: { dadosUnidade: true },
+      orderBy: { identificador: 'asc' },
+    });
+    const unidadeIds = unidades.map((u) => u.id);
+
+    const cobrancas = await tenantPrisma.cobranca.findMany({
+      where: { unidadeId: { in: unidadeIds } },
+      select: { unidadeId: true, status: true, valor: true, vencimento: true },
+    });
+
+    // groupBy em unidadeId nullable — o filtro `in: unidadeIds` exclui null
+    const chamadosPorUnidade = await tenantPrisma.chamado.groupBy({
+      by: ['unidadeId'],
+      where: { condominioId, unidadeId: { in: unidadeIds }, status: { not: 'RESOLVIDO' } },
+      _count: { _all: true },
+    });
+    const chamadosMap = new Map(
+      chamadosPorUnidade
+        .filter((c) => c.unidadeId !== null)
+        .map((c) => [c.unidadeId as string, c._count._all]),
+    );
+
+    const atrasoMap = new Map<string, { totalEmAtraso: number; diasAtraso: number }>();
+    const temCobrancaSet = new Set<string>();
+
+    for (const cb of cobrancas) {
+      temCobrancaSet.add(cb.unidadeId);
+      const inadimplente =
+        cb.status === 'ATRASADO' || (cb.status === 'PENDENTE' && cb.vencimento < inicioDeHoje);
+      if (inadimplente) {
+        const dias = Math.max(
+          0,
+          Math.floor((inicioDeHoje.getTime() - cb.vencimento.getTime()) / 86_400_000),
+        );
+        const atual = atrasoMap.get(cb.unidadeId) ?? { totalEmAtraso: 0, diasAtraso: 0 };
+        atrasoMap.set(cb.unidadeId, {
+          totalEmAtraso: atual.totalEmAtraso + Number(cb.valor),
+          diasAtraso: Math.max(atual.diasAtraso, dias),
+        });
+      }
+    }
+
+    return unidades.map((u) => {
+      const dados = u.dadosUnidade;
+      const flags = dados
+        ? Object.entries(NOMES_FLAGS_UNIDADE)
+            .filter(([key]) => (dados as Record<string, unknown>)[key] === true)
+            .map(([, label]) => label)
+        : [];
+
+      return {
+        unidadeId: u.id,
+        identificador: u.identificador,
+        tipo: u.tipo,
+        responsavelNome: u.responsavelNome ?? null,
+        statusFinanceiro: atrasoMap.has(u.id)
+          ? 'INADIMPLENTE'
+          : temCobrancaSet.has(u.id)
+            ? 'ADIMPLENTE'
+            : 'SEM_COBRANCA',
+        totalEmAtraso: arredondar(atrasoMap.get(u.id)?.totalEmAtraso ?? 0),
+        diasAtraso: atrasoMap.get(u.id)?.diasAtraso ?? 0,
+        chamadosAbertos: chamadosMap.get(u.id) ?? 0,
+        statusOcupacao: dados?.statusOcupacao ?? null,
+        flags,
+      };
+    });
   }
 }

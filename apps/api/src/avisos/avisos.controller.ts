@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -18,20 +20,35 @@ import { TenantPrismaClient } from '../prisma/tenant-prisma';
 import { AuthenticatedUser } from '../auth/types/auth.types';
 import { AvisosService } from './avisos.service';
 import { CriarAvisoDto } from './dto/criar-aviso.dto';
+import { AtualizarAvisoDto } from './dto/atualizar-aviso.dto';
+import { PermissoesSindicoService } from '../condominios/permissoes-sindico.service';
 
 @Controller()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @UseInterceptors(TenantInterceptor)
 export class AvisosController {
-  constructor(private readonly avisosService: AvisosService) {}
+  constructor(
+    private readonly avisosService: AvisosService,
+    private readonly permissoesService: PermissoesSindicoService,
+  ) {}
+
+  @Get('condominios/:condominioId/avisos')
+  @Roles('ADMINISTRADORA', 'SINDICO', 'CONDOMINO')
+  listar(@CurrentTenantPrisma() prisma: TenantPrismaClient) {
+    return this.avisosService.listar(prisma);
+  }
 
   @Post('condominios/:condominioId/avisos')
   @Roles('ADMINISTRADORA', 'SINDICO')
-  criar(
+  async criar(
     @Param('condominioId') condominioId: string,
     @Body() dto: CriarAvisoDto,
+    @CurrentUser() usuario: AuthenticatedUser,
     @CurrentTenantPrisma() prisma: TenantPrismaClient,
   ) {
+    if (usuario.vinculos.some((v) => v.condominioId === condominioId && v.papel === 'SINDICO')) {
+      await this.permissoesService.verificar(condominioId, 'avisosCriar');
+    }
     return this.avisosService.criar(condominioId, dto, prisma);
   }
 
@@ -49,5 +66,35 @@ export class AvisosController {
   @Patch('avisos/:avisoId/marcar-lido')
   marcarComoLido(@Param('avisoId') avisoId: string, @CurrentUser() usuario: AuthenticatedUser) {
     return this.avisosService.marcarComoLido(avisoId, usuario.usuarioId);
+  }
+
+  @Patch('avisos/:avisoId')
+  @Roles('ADMINISTRADORA', 'SINDICO')
+  async atualizar(
+    @Param('avisoId') avisoId: string,
+    @Body() dto: AtualizarAvisoDto,
+    @CurrentUser() usuario: AuthenticatedUser,
+    @CurrentTenantPrisma() prisma: TenantPrismaClient,
+  ) {
+    const condominioVinculo = usuario.vinculos.find((v) => v.condominioId && v.papel === 'SINDICO');
+    if (condominioVinculo?.condominioId) {
+      await this.permissoesService.verificar(condominioVinculo.condominioId, 'avisosEditar');
+    }
+    return this.avisosService.atualizar(avisoId, dto, prisma);
+  }
+
+  @Delete('avisos/:avisoId')
+  @Roles('ADMINISTRADORA', 'SINDICO')
+  @HttpCode(204)
+  async remover(
+    @Param('avisoId') avisoId: string,
+    @CurrentUser() usuario: AuthenticatedUser,
+    @CurrentTenantPrisma() prisma: TenantPrismaClient,
+  ) {
+    const condominioVinculo = usuario.vinculos.find((v) => v.condominioId && v.papel === 'SINDICO');
+    if (condominioVinculo?.condominioId) {
+      await this.permissoesService.verificar(condominioVinculo.condominioId, 'avisosExcluir');
+    }
+    return this.avisosService.remover(avisoId, prisma);
   }
 }

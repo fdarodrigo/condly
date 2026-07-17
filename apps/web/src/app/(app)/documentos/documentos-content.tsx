@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ApiError, apiFetch } from '@/lib/api-client';
-import { obterVinculos, temPapel } from '@/lib/auth';
+import { temPapel, obterVinculos } from '@/lib/auth';
+import { useCondominioAtivo } from '@/lib/hooks/use-condominio-ativo';
 import { formatarData } from '@/lib/status-labels';
 
 // Mesma lista de permissão de CriarUploadUrlDto.TIPOS_MIME_PERMITIDOS no
@@ -27,16 +28,50 @@ interface Documento {
   criadoEm: string;
 }
 
-interface CriarUploadUrlResposta {
-  uploadUrl: string;
-  documento: Documento;
+
+function CondominioSelector({
+  condominios,
+  valor,
+  onChange,
+}: {
+  condominios: { id: string; nome: string }[];
+  valor: string;
+  onChange: (id: string) => void;
+}) {
+  if (condominios.length <= 1) return null;
+  return (
+    <div className="flex items-center gap-2">
+      <Label htmlFor="documentos-condominio">Condomínio</Label>
+      <select
+        id="documentos-condominio"
+        value={valor}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+      >
+        {condominios.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.nome}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
 }
 
 export function DocumentosContent() {
-  const [condominioId, setCondominioId] = useState<string | null>(null);
-  const [podeFazerUpload, setPodeFazerUpload] = useState(false);
+  const {
+    condominioId,
+    condominios,
+    selecionarCondominio,
+    carregando: carregandoCondominio,
+    erro: erroCondominio,
+  } = useCondominioAtivo();
+
+  const [podeFazerUpload] = useState(() =>
+    temPapel(obterVinculos(), ['ADMINISTRADORA', 'SINDICO']),
+  );
   const [documentos, setDocumentos] = useState<Documento[]>([]);
-  const [carregando, setCarregando] = useState(true);
+  const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [tipo, setTipo] = useState('');
   const [visibilidade, setVisibilidade] = useState<'TODOS' | 'SINDICO_ADMINISTRADORA'>('TODOS');
@@ -45,6 +80,8 @@ export function DocumentosContent() {
   const inputArquivoRef = useRef<HTMLInputElement>(null);
 
   const carregarDocumentos = useCallback(async (id: string) => {
+    setCarregando(true);
+    setErro(null);
     try {
       const resposta = await apiFetch<Documento[]>(`/condominios/${id}/documentos`);
       setDocumentos(resposta);
@@ -58,16 +95,9 @@ export function DocumentosContent() {
   }, []);
 
   useEffect(() => {
-    const vinculos = obterVinculos();
-    setPodeFazerUpload(temPapel(vinculos, ['ADMINISTRADORA', 'SINDICO']));
-    const id = vinculos.find((vinculo) => vinculo.condominioId)?.condominioId;
-    if (!id) {
-      setCarregando(false);
-      return;
-    }
-    setCondominioId(id);
-    void carregarDocumentos(id);
-  }, [carregarDocumentos]);
+    if (!condominioId) return;
+    void carregarDocumentos(condominioId);
+  }, [condominioId, carregarDocumentos]);
 
   async function aoEnviarUpload(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
@@ -86,29 +116,24 @@ export function DocumentosContent() {
     setEnviando(true);
     setErro(null);
     try {
-      const { uploadUrl, documento } = await apiFetch<CriarUploadUrlResposta>(
-        `/condominios/${condominioId}/documentos/upload-url`,
-        {
-          method: 'POST',
-          body: { tipo, visibilidade, nomeArquivo: arquivo.name, contentType: arquivo.type },
-        },
-      );
+      const formData = new FormData();
+      formData.append('arquivo', arquivo);
+      formData.append('tipo', tipo);
+      formData.append('visibilidade', visibilidade);
 
-      const respostaPut = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': arquivo.type },
-        body: arquivo,
-      });
-      if (!respostaPut.ok) {
-        throw new Error('Não foi possível enviar o arquivo para o armazenamento.');
-      }
+      const documento = await apiFetch<Documento>(
+        `/condominios/${condominioId}/documentos/upload`,
+        { method: 'POST', formData },
+      );
 
       setDocumentos((atuais) => [documento, ...atuais]);
       setTipo('');
       setVisibilidade('TODOS');
       if (inputArquivoRef.current) inputArquivoRef.current.value = '';
     } catch (excecao) {
-      setErro(excecao instanceof ApiError ? excecao.message : 'Não foi possível enviar o documento.');
+      setErro(
+        excecao instanceof ApiError ? excecao.message : 'Não foi possível enviar o documento.',
+      );
     } finally {
       setEnviando(false);
     }
@@ -121,27 +146,36 @@ export function DocumentosContent() {
       const { url } = await apiFetch<{ url: string }>(`/documentos/${documentoId}/download-url`);
       window.open(url, '_blank', 'noopener,noreferrer');
     } catch (excecao) {
-      setErro(excecao instanceof ApiError ? excecao.message : 'Não foi possível abrir o documento.');
+      setErro(
+        excecao instanceof ApiError ? excecao.message : 'Não foi possível abrir o documento.',
+      );
     } finally {
       setAbrindoId(null);
     }
   }
 
-  if (carregando) {
+  if (carregandoCondominio) {
     return <p className="text-sm text-muted-foreground">Carregando…</p>;
+  }
+
+  if (erroCondominio) {
+    return <p className="text-sm text-destructive">{erroCondominio}</p>;
   }
 
   if (!condominioId) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Seu usuário não está vinculado diretamente a um condomínio específico — esta tela não se
-        aplica ao seu papel.
-      </p>
+      <p className="text-sm text-muted-foreground">Nenhum condomínio encontrado na carteira.</p>
     );
   }
 
   return (
     <div className="flex flex-col gap-6">
+      <CondominioSelector
+        condominios={condominios}
+        valor={condominioId}
+        onChange={selecionarCondominio}
+      />
+
       {erro && (
         <p role="alert" className="text-sm text-destructive" data-testid="documentos-erro">
           {erro}
@@ -198,7 +232,12 @@ export function DocumentosContent() {
                 </div>
                 <span className="text-xs text-muted-foreground">PDF, JPEG ou PNG.</span>
               </div>
-              <Button type="submit" disabled={enviando} data-testid="documento-enviar" className="gap-1.5">
+              <Button
+                type="submit"
+                disabled={enviando}
+                data-testid="documento-enviar"
+                className="gap-1.5"
+              >
                 <UploadCloud className="size-4" aria-hidden="true" />
                 {enviando ? 'Enviando…' : 'Enviar documento'}
               </Button>
@@ -215,7 +254,9 @@ export function DocumentosContent() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {documentos.length === 0 ? (
+          {carregando ? (
+            <p className="text-sm text-muted-foreground">Carregando…</p>
+          ) : documentos.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nenhum documento disponível.</p>
           ) : (
             <ul className="flex flex-col gap-2" data-testid="lista-documentos">
@@ -223,9 +264,9 @@ export function DocumentosContent() {
                 <li
                   key={documento.id}
                   data-testid="documento-item"
-                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5 transition-colors hover:border-primary/30 hover:bg-primary/3"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2.5 transition-colors hover:border-primary/30 hover:bg-primary/3"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                       <FileText className="size-4" aria-hidden="true" />
                     </span>

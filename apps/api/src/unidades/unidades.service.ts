@@ -1,5 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantPrismaClient } from '../prisma/tenant-prisma';
+import { CriarUnidadeDto } from './dto/criar-unidade.dto';
+import { AtualizarUnidadeDto } from './dto/atualizar-unidade.dto';
 
 @Injectable()
 export class UnidadesService {
@@ -28,5 +36,56 @@ export class UnidadesService {
     });
 
     return { unidadeId: vinculo.unidadeId, cobrancaPendente };
+  }
+
+  async listar(condominioId: string, tenantPrisma: TenantPrismaClient) {
+    return tenantPrisma.unidade.findMany({
+      where: { condominioId },
+      orderBy: { identificador: 'asc' },
+    });
+  }
+
+  async criar(condominioId: string, dto: CriarUnidadeDto, tenantPrisma: TenantPrismaClient) {
+    const existente = await tenantPrisma.unidade.findFirst({
+      where: { condominioId, identificador: dto.identificador },
+    });
+    if (existente) throw new ConflictException('Identificador já existe neste condomínio.');
+    return tenantPrisma.unidade.create({
+      data: {
+        condominioId,
+        identificador: dto.identificador,
+        tipo: dto.tipo,
+        responsavelNome: dto.responsavelNome,
+        responsavelEmail: dto.responsavelEmail,
+        responsavelCpfCnpj: dto.responsavelCpfCnpj,
+      },
+    });
+  }
+
+  async atualizar(unidadeId: string, dto: AtualizarUnidadeDto, tenantPrisma: TenantPrismaClient) {
+    const unidade = await tenantPrisma.unidade.findUnique({ where: { id: unidadeId } });
+    if (!unidade) throw new NotFoundException('Unidade não encontrada.');
+    return tenantPrisma.unidade.update({
+      where: { id: unidadeId },
+      data: {
+        ...(dto.identificador !== undefined && { identificador: dto.identificador }),
+        ...(dto.tipo !== undefined && { tipo: dto.tipo }),
+        ...(dto.responsavelNome !== undefined && { responsavelNome: dto.responsavelNome }),
+        ...(dto.responsavelEmail !== undefined && { responsavelEmail: dto.responsavelEmail }),
+        ...(dto.responsavelCpfCnpj !== undefined && { responsavelCpfCnpj: dto.responsavelCpfCnpj }),
+      },
+    });
+  }
+
+  async remover(unidadeId: string, tenantPrisma: TenantPrismaClient) {
+    const unidade = await tenantPrisma.unidade.findUnique({
+      where: { id: unidadeId },
+      include: { vinculos: { take: 1 } },
+    });
+    if (!unidade) throw new NotFoundException('Unidade não encontrada.');
+    if (unidade.vinculos.length > 0) {
+      throw new BadRequestException('Não é possível excluir uma unidade com usuários vinculados.');
+    }
+    await this.prisma.unidade.delete({ where: { id: unidadeId } });
   }
 }

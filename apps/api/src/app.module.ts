@@ -16,6 +16,10 @@ import { DocumentosModule } from './documentos/documentos.module';
 import { AvisosModule } from './avisos/avisos.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { BotModule } from './bot/bot.module';
+import { AcoesAdministrativasModule } from './acoes-administrativas/acoes-administrativas.module';
+import { EnquetesModule } from './enquetes/enquetes.module';
+import { AssembleiasModule } from './assembleias/assembleias.module';
+import { AdvertenciasModule } from './advertencias/advertencias.module';
 
 @Module({
   imports: [
@@ -34,6 +38,10 @@ import { BotModule } from './bot/bot.module';
     AvisosModule,
     DashboardModule,
     BotModule,
+    AcoesAdministrativasModule,
+    EnquetesModule,
+    AssembleiasModule,
+    AdvertenciasModule,
   ],
   controllers: [AppController],
   providers: [AppService],

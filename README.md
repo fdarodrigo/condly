@@ -109,6 +109,66 @@ Verifique o backend em `http://localhost:3001/health` — deve responder
 `{"status":"ok"}`. O frontend mostra "Condly — em construção" em
 `http://localhost:3000`.
 
+## Dados de demonstração
+
+`npm run db:seed` (em `apps/api`, lê `DATABASE_URL` — recusa rodar fora de
+um banco `_dev`/`_test`, ver `validarBancoDeDesenvolvimento` em
+`prisma/seed.ts`) popula um cenário fixo de demonstração: 1 administradora,
+10 condomínios (174 unidades no total), 109 usuários (1 administradora, 1
+síndico por condomínio e até 10 condôminos por condomínio), com cobranças,
+reservas, chamados, avisos, enquetes, assembleias, ações administrativas,
+documentos, advertências e dados complementares de unidade distribuídos
+entre eles. **É destrutivo** — apaga todo o conteúdo das tabelas de domínio
+antes de recriar o cenário.
+
+### Credenciais
+
+Senha de todos os usuários de demonstração: **`Demo123!`**
+
+| Papel | E-mail | Vínculo |
+| --- | --- | --- |
+| ADMINISTRADORA | `administradora.demo@condly.app` | Administradora "Administradora Demo" (carteira com os 10 condomínios) |
+| SINDICO | `sindico.demo@condly.app` | Condomínio "Residencial Ipê Verde" (1º da lista) |
+| SINDICO | `sindico{N}.demo@condly.app` (N = 2..10) | N-ésimo condomínio da lista (ex: `sindico2.demo` → Edifício Maracanã) |
+| CONDOMINO | `condomino{J}.demo@condly.app` (J = 1..10) | J-ésima unidade do Residencial Ipê Verde (101, 102, 103, ...) |
+| CONDOMINO | `condomino{J}.c{N}.demo@condly.app` | J-ésima unidade do N-ésimo condomínio (ex: `condomino1.c2.demo` → unidade 101 do Edifício Maracanã) |
+
+Ordem dos condomínios (a mesma de `CONDOMINIOS_CONFIG` em `prisma/seed.ts`):
+1. Residencial Ipê Verde, 2. Edifício Maracanã, 3. Condomínio Solar das
+Pedras, 4. Torres do Parque, 5. Villagio Toscana (8 unidades — só 8
+condôminos), 6. Residencial Bela Vista, 7. Edifício Copacabana Club,
+8. Condomínio Rio Branco, 9. Residencial Alegria, 10. Boulevard Jardins.
+
+Os 5 logins originais (`administradora.demo`, `sindico.demo`,
+`condomino1..3.demo`) continuam exatamente os mesmos.
+
+### O que cada login tem pra mostrar
+
+- **Administradora** (`/dashboard` e `/administradora/dashboard`): carteira
+  com 10 condomínios, adimplência variada (62%–100%), 16 chamados abertos
+  na carteira, rankings de arrecadação/inadimplência com 10 itens e
+  serviços periódicos a vencer nos próximos 30 dias.
+- **Síndico do Ipê Verde** (`/dashboard`): resumo financeiro do mês (9
+  pagas, 3 pendentes), 3 chamados (1 ABERTO, 1 PENDENTE_TRIAGEM aberto pela
+  condômina da 101, 1 RESOLVIDO aberto pelo condômino da 102); em
+  `/enquetes`, 3 enquetes (ATIVA com votos, ENCERRADA com resultado,
+  RASCUNHO); em `/assembleias`, 1 AGENDADA (com edital) e 1 REALIZADA (com
+  deliberações, ata e link de gravação); em `/acoes-administrativas`, 3
+  ações; em `/documentos`, 3 documentos (1 restrito a síndico/adm); 2
+  advertências emitidas; dados complementares preenchidos nas unidades
+  101–103. Os outros 9 síndicos têm cenários equivalentes mais enxutos.
+- **Condôminos** (`/minha-unidade`): os 3 primeiros de cada condomínio têm
+  cobrança PENDENTE/ATRASADA (nunca caem no bloco PAGO); todos têm pelo
+  menos 1 aviso não lido em `/avisos`; os condôminos 1–3 têm reserva futura
+  confirmada; no Ipê Verde, condôminos 1–6/1–8 já votaram nas enquetes
+  ativa/encerrada e podem ver o resultado parcial.
+
+**Observação sobre `/reservas`:** a tela usa "amanhã" como data padrão, mas
+as reservas do seed começam 3 dias a partir do momento em que o seed roda
+— então, no dia em que o seed for executado, a view padrão (amanhã) pode
+aparecer com tudo livre. Avance a data no formulário (próximos ~3 a 20
+dias) para ver horários "Reservado" de verdade.
+
 ## Gateway de pagamento (Asaas sandbox)
 
 O módulo financeiro (`apps/api/src/financeiro`) integra com o

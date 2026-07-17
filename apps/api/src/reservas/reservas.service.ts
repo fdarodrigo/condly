@@ -5,9 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma/client';
 import { TenantPrismaClient } from '../prisma/tenant-prisma';
 import { AuthenticatedUser } from '../auth/types/auth.types';
 import { CriarReservaDto } from './dto/criar-reserva.dto';
+import { AtualizarRegrasDto } from './dto/atualizar-regras.dto';
 
 export interface RegrasReserva {
   horarioAbertura: string;
@@ -95,8 +97,47 @@ export class ReservasService {
   async listarAreasComuns(condominioId: string, tenantPrisma: TenantPrismaClient) {
     return tenantPrisma.areaComum.findMany({
       where: { condominioId },
-      select: { id: true, nome: true },
+      select: { id: true, nome: true, regrasReserva: true },
       orderBy: { nome: 'asc' },
+    });
+  }
+
+  async listarReservas(condominioId: string, tenantPrisma: TenantPrismaClient) {
+    return tenantPrisma.reserva.findMany({
+      where: { unidade: { condominioId } },
+      select: {
+        id: true,
+        inicio: true,
+        fim: true,
+        status: true,
+        criadoEm: true,
+        areaComum: { select: { nome: true } },
+        unidade: { select: { identificador: true } },
+      },
+      orderBy: { criadoEm: 'desc' },
+    });
+  }
+
+  async atualizarRegras(
+    areaComumId: string,
+    dto: AtualizarRegrasDto,
+    tenantPrisma: TenantPrismaClient,
+  ) {
+    const areaComum = await tenantPrisma.areaComum.findUnique({ where: { id: areaComumId } });
+    if (!areaComum) throw new NotFoundException('Área comum não encontrada.');
+
+    const regrasAtuais = lerRegras(areaComum.regrasReserva);
+    const novasRegras: RegrasReserva = {
+      horarioAbertura: dto.horarioAbertura ?? regrasAtuais.horarioAbertura,
+      horarioFechamento: dto.horarioFechamento ?? regrasAtuais.horarioFechamento,
+      duracaoMinimaMinutos: dto.duracaoMinimaMinutos ?? regrasAtuais.duracaoMinimaMinutos,
+      antecedenciaMaximaDias: dto.antecedenciaMaximaDias ?? regrasAtuais.antecedenciaMaximaDias,
+    };
+
+    return tenantPrisma.areaComum.update({
+      where: { id: areaComumId },
+      data: { regrasReserva: novasRegras as unknown as Prisma.InputJsonValue },
+      select: { id: true, nome: true, regrasReserva: true },
     });
   }
 

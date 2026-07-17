@@ -18,9 +18,12 @@ export class R2S3Client implements R2Client {
   }
 
   private get client(): S3Client {
+    const customEndpoint = process.env.R2_ENDPOINT;
     return new S3Client({
       region: 'auto',
-      endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      endpoint: customEndpoint ?? `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      // MinIO (dev local) usa path-style; R2 usa virtual-hosted
+      forcePathStyle: !!customEndpoint,
       credentials: {
         accessKeyId: process.env.R2_ACCESS_KEY_ID ?? '',
         secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? '',
@@ -43,5 +46,11 @@ export class R2S3Client implements R2Client {
   async gerarUrlDownload(key: string, expiresInSeconds: number): Promise<string> {
     const command = new GetObjectCommand({ Bucket: this.bucket, Key: key });
     return getSignedUrl(this.client, command, { expiresIn: expiresInSeconds });
+  }
+
+  async uploadDireto(key: string, body: Buffer, contentType: string): Promise<void> {
+    await this.client.send(
+      new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }),
+    );
   }
 }

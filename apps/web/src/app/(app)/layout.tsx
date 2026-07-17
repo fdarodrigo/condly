@@ -23,9 +23,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
-      <div className="flex flex-1 flex-col">
+      {/* min-w-0: sem isso, qualquer texto nowrap/truncate dentro do conteúdo
+          propaga a largura mínima intrínseca até aqui (flex item tem
+          min-width:auto por padrão) e estica a página inteira além da
+          viewport no mobile — o truncate nunca chega a agir. */}
+      <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
-        <main className="flex-1 p-6 md:p-8">
+        <main className="flex-1 p-4 sm:p-6 md:p-8">
           <div className="mx-auto flex w-full max-w-5xl flex-col">{children}</div>
         </main>
       </div>

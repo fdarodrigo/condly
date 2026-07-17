@@ -51,6 +51,12 @@ export function obterVinculos(): VinculoToken[] {
   return decodificarAccessToken(token)?.vinculos ?? [];
 }
 
+export function obterUsuarioId(): string | null {
+  const token = obterAccessToken();
+  if (!token) return null;
+  return decodificarAccessToken(token)?.sub ?? null;
+}
+
 export function temPapel(vinculos: VinculoToken[], papeis: Papel[]): boolean {
   return vinculos.some((vinculo) => papeis.includes(vinculo.papel));
 }
@@ -82,12 +88,13 @@ export function papelPrincipal(vinculos: VinculoToken[]): string | undefined {
 }
 
 /**
- * SINDICO/ADMINISTRADORA caem no dashboard do condomínio; CONDOMINO cai na
- * própria unidade. Decisão do Prompt 10.5 — se um usuário tiver mais de um
- * papel (caso raro), síndico/administradora prevalece sobre condômino.
+ * Todos os três perfis caem no Dashboard; CONDOMINO vai pra própria unidade.
+ * ADMINISTRADORA e SINDICO compartilham /dashboard, que mostra conteúdo
+ * diferente por papel (ver DashboardRouter).
  */
 export function rotaInicialParaVinculos(vinculos: VinculoToken[]): string {
-  if (temPapel(vinculos, ['SINDICO', 'ADMINISTRADORA'])) return '/dashboard';
+  if (temPapel(vinculos, ['ADMINISTRADORA'])) return '/dashboard';
+  if (temPapel(vinculos, ['SINDICO'])) return '/dashboard';
   if (temPapel(vinculos, ['CONDOMINO'])) return '/minha-unidade';
   return '/login';
 }

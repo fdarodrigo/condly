@@ -45,7 +45,7 @@ describe('DocumentosContent — fluxo de upload', () => {
     limparAccessToken();
   });
 
-  it('pede a upload-url, faz o PUT do arquivo e adiciona o documento na lista', async () => {
+  it('envia o arquivo via POST multipart e adiciona o documento na lista', async () => {
     const usuario = userEvent.setup();
     const documentoCriado = {
       id: 'documento-1',
@@ -55,12 +55,11 @@ describe('DocumentosContent — fluxo de upload', () => {
     };
 
     mockFetchRoteado({
-      'GET http://localhost:3001/condominios/condominio-1/documentos': { status: 200, body: [] },
-      'POST http://localhost:3001/condominios/condominio-1/documentos/upload-url': {
+      'POST http://localhost:3001/condominios/condominio-1/documentos/upload': {
         status: 201,
-        body: { uploadUrl: 'https://r2.example.com/upload-key', documento: documentoCriado },
+        body: documentoCriado,
       },
-      'PUT https://r2.example.com/upload-key': { status: 200, ok: true },
+      'GET http://localhost:3001/condominios/condominio-1/documentos': { status: 200, body: [] },
     });
 
     render(<DocumentosContent />);
@@ -78,19 +77,14 @@ describe('DocumentosContent — fluxo de upload', () => {
     expect(screen.getByTestId('lista-documentos')).toHaveTextContent('Ata');
 
     const chamadas = (fetch as ReturnType<typeof vi.fn>).mock.calls;
-    const chamadaUploadUrl = chamadas.find(([url]) => String(url).includes('upload-url'));
-    expect(chamadaUploadUrl).toBeDefined();
-    const corpoEnviado = JSON.parse((chamadaUploadUrl![1] as RequestInit).body as string);
-    expect(corpoEnviado).toEqual({
-      tipo: 'Ata',
-      visibilidade: 'TODOS',
-      nomeArquivo: 'ata.pdf',
-      contentType: 'application/pdf',
-    });
-
-    const chamadaPut = chamadas.find(([url]) => String(url) === 'https://r2.example.com/upload-key');
-    expect(chamadaPut).toBeDefined();
-    expect((chamadaPut![1] as RequestInit).method).toBe('PUT');
+    const chamadaUpload = chamadas.find(([url]) => String(url).includes('/documentos/upload'));
+    expect(chamadaUpload).toBeDefined();
+    expect((chamadaUpload![1] as RequestInit).method).toBe('POST');
+    const corpoEnviado = (chamadaUpload![1] as RequestInit).body as FormData;
+    expect(corpoEnviado).toBeInstanceOf(FormData);
+    expect(corpoEnviado.get('tipo')).toBe('Ata');
+    expect(corpoEnviado.get('visibilidade')).toBe('TODOS');
+    expect((corpoEnviado.get('arquivo') as File).name).toBe('ata.pdf');
   });
 
   it('rejeita o envio de um tipo de arquivo não permitido, sem chamar a API', async () => {
@@ -118,6 +112,6 @@ describe('DocumentosContent — fluxo de upload', () => {
     );
 
     const chamadas = (fetch as ReturnType<typeof vi.fn>).mock.calls;
-    expect(chamadas.some(([url]) => String(url).includes('upload-url'))).toBe(false);
+    expect(chamadas.some(([url]) => String(url).includes('/documentos/upload'))).toBe(false);
   });
 });

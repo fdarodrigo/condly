@@ -22,6 +22,15 @@ export class DashboardController {
     return this.dashboardService.condominio(condominioId, prisma);
   }
 
+  @Get('condominios/:condominioId/dashboard/unidades')
+  @Roles('ADMINISTRADORA', 'SINDICO')
+  metricasUnidades(
+    @Param('condominioId') condominioId: string,
+    @CurrentTenantPrisma() prisma: TenantPrismaClient,
+  ) {
+    return this.dashboardService.metricasUnidades(condominioId, prisma);
+  }
+
   // Visão agregada de toda a carteira — só a própria ADMINISTRADORA, nunca
   // um SINDICO (que só gerencia o(s) próprio(s) condomínio(s)).
   @Get('administradoras/:administradoraId/dashboard')

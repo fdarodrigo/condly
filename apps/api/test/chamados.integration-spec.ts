@@ -53,7 +53,7 @@ describe('Módulo chamados', () => {
       const res = await request(app.getHttpServer())
         .post(`/condominios/${fixtures.condominio1.id}/chamados`)
         .set('Authorization', `Bearer ${tokenSindico}`)
-        .send({ categoria: 'manutenção' });
+        .send({ titulo: 'Portão da garagem travando', categoria: 'MANUTENCAO' });
 
       expect(res.status).toBe(201);
       expect(res.body.status).toBe('ABERTO');
@@ -64,7 +64,7 @@ describe('Módulo chamados', () => {
       const res = await request(app.getHttpServer())
         .post(`/condominios/${fixtures.condominio1.id}/chamados`)
         .set('Authorization', `Bearer ${tokenCondomino}`)
-        .send({ categoria: 'vazamento' });
+        .send({ titulo: 'Vazamento sob a pia', categoria: 'VAZAMENTO' });
 
       expect(res.status).toBe(201);
       expect(res.body.status).toBe('PENDENTE_TRIAGEM');
@@ -80,7 +80,7 @@ describe('Módulo chamados', () => {
       const res = await request(app.getHttpServer())
         .post(`/condominios/${fixtures.condominio1.id}/chamados`)
         .set('Authorization', `Bearer ${tokenSindico}`)
-        .send({ categoria: 'segurança' });
+        .send({ titulo: 'Câmera do hall desligada', categoria: 'SEGURANCA' });
 
       eventEmitter.off(CHAMADO_STATUS_ALTERADO, listener);
 
@@ -97,18 +97,23 @@ describe('Módulo chamados', () => {
       const res = await request(app.getHttpServer())
         .post(`/condominios/${fixtures.condominio2.id}/chamados`)
         .set('Authorization', `Bearer ${tokenCondomino}`)
-        .send({ categoria: 'qualquer' });
+        .send({ titulo: 'Chamado qualquer', categoria: 'OUTRO' });
 
       expect(res.status).toBe(403);
     });
 
-    it('administradora não está autorizada a abrir chamado (403)', async () => {
+    // Comportamento revisado pós-Prompt 4: ADMINISTRADORA também abre chamado
+    // (abrePorAdm em ChamadosService.abrirChamado), já classificado como
+    // ABERTO — mesmo tratamento do síndico, sem passar pela triagem.
+    it('administradora abre chamado já com status ABERTO', async () => {
       const res = await request(app.getHttpServer())
         .post(`/condominios/${fixtures.condominio1.id}/chamados`)
         .set('Authorization', `Bearer ${tokenAdministradora}`)
-        .send({ categoria: 'qualquer' });
+        .send({ titulo: 'Chamado aberto pela administradora', categoria: 'OUTRO' });
 
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(201);
+      expect(res.body.status).toBe('ABERTO');
+      expect(res.body.abertoPorId).toBe(fixtures.usuarioAdministradora.id);
     });
   });
 
@@ -117,7 +122,7 @@ describe('Módulo chamados', () => {
       const abertura = await request(app.getHttpServer())
         .post(`/condominios/${fixtures.condominio1.id}/chamados`)
         .set('Authorization', `Bearer ${tokenSindico}`)
-        .send({ categoria: 'elevador' });
+        .send({ titulo: 'Elevador parando fora do nível', categoria: 'ELEVADOR' });
       const chamadoId = abertura.body.id;
 
       const eventos: unknown[] = [];
@@ -158,7 +163,7 @@ describe('Módulo chamados', () => {
       const abertura = await request(app.getHttpServer())
         .post(`/condominios/${fixtures.condominio1.id}/chamados`)
         .set('Authorization', `Bearer ${tokenSindico}`)
-        .send({ categoria: 'jardim' });
+        .send({ titulo: 'Poda do jardim', categoria: 'OUTRO' });
 
       const eventos: unknown[] = [];
       const listener = (evento: unknown) => eventos.push(evento);
@@ -167,12 +172,12 @@ describe('Módulo chamados', () => {
       const res = await request(app.getHttpServer())
         .patch(`/chamados/${abertura.body.id}`)
         .set('Authorization', `Bearer ${tokenSindico}`)
-        .send({ categoria: 'jardinagem' });
+        .send({ categoria: 'LIMPEZA' });
 
       eventEmitter.off(CHAMADO_STATUS_ALTERADO, listener);
 
       expect(res.status).toBe(200);
-      expect(res.body.categoria).toBe('jardinagem');
+      expect(res.body.categoria).toBe('LIMPEZA');
       expect(eventos).toHaveLength(0);
     });
 
@@ -180,7 +185,7 @@ describe('Módulo chamados', () => {
       const abertura = await request(app.getHttpServer())
         .post(`/condominios/${fixtures.condominio1.id}/chamados`)
         .set('Authorization', `Bearer ${tokenSindico}`)
-        .send({ categoria: 'portão' });
+        .send({ titulo: 'Portão social rangendo', categoria: 'PORTARIA' });
 
       const res = await request(app.getHttpServer())
         .patch(`/chamados/${abertura.body.id}`)
@@ -194,7 +199,7 @@ describe('Módulo chamados', () => {
       const abertura = await request(app.getHttpServer())
         .post(`/condominios/${fixtures.condominio1.id}/chamados`)
         .set('Authorization', `Bearer ${tokenSindico}`)
-        .send({ categoria: 'interfone' });
+        .send({ titulo: 'Interfone mudo', categoria: 'PORTARIA' });
 
       const res = await request(app.getHttpServer())
         .patch(`/chamados/${abertura.body.id}`)
@@ -224,7 +229,7 @@ describe('Módulo chamados', () => {
       const abertura = await request(app.getHttpServer())
         .post(`/condominios/${fixtures.condominio1.id}/chamados`)
         .set('Authorization', `Bearer ${tokenSindico}`)
-        .send({ categoria: 'pintura' });
+        .send({ titulo: 'Pintura descascando', categoria: 'MANUTENCAO' });
 
       const res = await request(app.getHttpServer())
         .patch(`/chamados/${abertura.body.id}`)
@@ -252,7 +257,7 @@ describe('Módulo chamados', () => {
       const abertura = await request(app.getHttpServer())
         .post(`/condominios/${fixtures.condominio1.id}/chamados`)
         .set('Authorization', `Bearer ${tokenSindico}`)
-        .send({ categoria: 'limpeza' });
+        .send({ titulo: 'Limpeza da escada', categoria: 'LIMPEZA' });
 
       const res = await request(app.getHttpServer())
         .patch(`/chamados/${abertura.body.id}`)

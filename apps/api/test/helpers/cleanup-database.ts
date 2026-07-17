@@ -8,11 +8,20 @@ import { PrismaService } from '../../src/prisma/prisma.service';
  */
 export async function limparBanco(prisma: PrismaService): Promise<void> {
   await prisma.vinculoUsuario.deleteMany();
+  await prisma.votoEnquete.deleteMany();
+  await prisma.opcaoEnquete.deleteMany();
+  await prisma.enquete.deleteMany();
+  await prisma.assembleiaDocumento.deleteMany();
+  await prisma.pautaAssembleia.deleteMany();
+  await prisma.assembleia.deleteMany();
+  await prisma.acaoAdministrativa.deleteMany();
   await prisma.avisoLeitura.deleteMany();
   await prisma.conversaBot.deleteMany();
   await prisma.reserva.deleteMany();
   await prisma.cobranca.deleteMany();
   await prisma.chamado.deleteMany();
+  await prisma.advertencia.deleteMany();
+  await prisma.dadosUnidade.deleteMany();
   await prisma.documento.deleteMany();
   await prisma.aviso.deleteMany();
   await prisma.servicoPeriodico.deleteMany();

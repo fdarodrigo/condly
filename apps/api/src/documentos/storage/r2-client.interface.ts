@@ -13,4 +13,5 @@ export interface GerarUrlUploadOutput {
 export interface R2Client {
   gerarUrlUpload(input: GerarUrlUploadInput): Promise<GerarUrlUploadOutput>;
   gerarUrlDownload(key: string, expiresInSeconds: number): Promise<string>;
+  uploadDireto(key: string, body: Buffer, contentType: string): Promise<void>;
 }

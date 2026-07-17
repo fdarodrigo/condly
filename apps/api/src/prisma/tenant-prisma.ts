@@ -13,8 +13,12 @@ const CONDOMINIO_ID_MODELS = [
   'aviso',
   'areaComum',
   'servicoPeriodico',
+  'acaoAdministrativa',
+  'enquete',
+  'assembleia',
+  'advertencia',
 ] as const;
-const UNIDADE_ID_MODELS = ['cobranca', 'reserva', 'conversaBot'] as const;
+const UNIDADE_ID_MODELS = ['cobranca', 'reserva', 'conversaBot', 'dadosUnidade'] as const;
 
 // Operações que aceitam `where` — nunca mexemos em create/createMany, que não têm essa chave.
 const WHERE_OPERATIONS = new Set([

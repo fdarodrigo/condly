@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/rbac/roles.guard';
 import { Roles } from '../auth/rbac/roles.decorator';
@@ -24,6 +34,18 @@ export class DocumentosController {
     @CurrentTenantPrisma() prisma: TenantPrismaClient,
   ) {
     return this.documentosService.criarUrlUpload(condominioId, dto, prisma);
+  }
+
+  @Post('condominios/:condominioId/documentos/upload')
+  @Roles('ADMINISTRADORA', 'SINDICO')
+  @UseInterceptors(FileInterceptor('arquivo', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  uploadComArquivo(
+    @Param('condominioId') condominioId: string,
+    @Body() dto: CriarUploadUrlDto,
+    @UploadedFile() arquivo: Express.Multer.File,
+    @CurrentTenantPrisma() prisma: TenantPrismaClient,
+  ) {
+    return this.documentosService.criarDocumentoComArquivo(condominioId, dto, arquivo, prisma);
   }
 
   @Get('condominios/:condominioId/documentos')

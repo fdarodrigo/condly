@@ -178,10 +178,24 @@ describe('Auth + RBAC multi-tenant', () => {
       expect(res.status).toBe(403);
     });
 
-    it('NÃO acessa o condomínio (403)', async () => {
+    // Liberado de propósito: a topbar do frontend mostra o nome do condomínio
+    // associado pra CONDOMINO/SINDICO via GET /condominios/:id — o vínculo de
+    // CONDOMINO autoriza no nível do próprio condomínio (resolvido a partir
+    // da unidade no login), nunca no de outro tenant (teste abaixo).
+    it('acessa o próprio condomínio (200)', async () => {
       const token = await login(fixtures.usuarioCondomino.email);
       const res = await request(app.getHttpServer())
         .get(`/condominios/${fixtures.condominio1.id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(fixtures.condominio1.id);
+    });
+
+    it('NÃO acessa condomínio de outro tenant (403)', async () => {
+      const token = await login(fixtures.usuarioCondomino.email);
+      const res = await request(app.getHttpServer())
+        .get(`/condominios/${fixtures.condominio2.id}`)
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(403);

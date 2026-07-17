@@ -1,17 +1,17 @@
 import { LayoutDashboard } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { RequireRole } from '@/components/layout/require-role';
-import { DashboardContent } from './dashboard-content';
+import { DashboardRouter } from './dashboard-router';
 
 export default function DashboardPage() {
   return (
-    <RequireRole roles={['ADMINISTRADORA', 'SINDICO']}>
+    <RequireRole roles={['SINDICO', 'ADMINISTRADORA']}>
       <PageHeader
         icone={LayoutDashboard}
-        titulo="Dashboard do condomínio"
-        descricao="Financeiro do mês e chamados em andamento."
+        titulo="Dashboard"
+        descricao="Visão geral do condomínio ou da carteira, conforme seu papel."
       />
-      <DashboardContent />
+      <DashboardRouter />
     </RequireRole>
   );
 }

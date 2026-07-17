@@ -1,14 +1,17 @@
 import { User } from 'lucide-react';
-import { PreviewPlaceholder } from '@/components/layout/preview-placeholder';
+import { PageHeader } from '@/components/layout/page-header';
+import { RequireRole } from '@/components/layout/require-role';
+import { PerfilContent } from './perfil-content';
 
 export default function PerfilPage() {
   return (
-    <div className="flex min-h-[70vh] flex-1 items-center justify-center">
-      <PreviewPlaceholder
+    <RequireRole roles={['ADMINISTRADORA', 'SINDICO']}>
+      <PageHeader
         icone={User}
-        titulo="Perfil"
-        descricao="Edite seus dados pessoais, foto e preferências de conta — disponível em breve."
+        titulo="Perfil & Gestão"
+        descricao="Gerencie condomínios, síndicos, condôminos e permissões."
       />
-    </div>
+      <PerfilContent />
+    </RequireRole>
   );
 }
