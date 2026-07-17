@@ -4,7 +4,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { limparBanco } from '../test/helpers/cleanup-database';
 import { Administradora, Condominio, Unidade, Usuario } from '../generated/prisma/client';
 
-export const SENHA_DEMO = 'Demo123!';
+export const SENHA_DEMO = '123';
 
 // Cada condomínio ganha 1 síndico e até este número de condôminos (limitado
 // pela quantidade de unidades — Villagio Toscana tem só 8 unidades, então
@@ -87,23 +87,25 @@ const CHAMADOS_CONFIG: {
 ];
 
 // ─── Identidade dos usuários de demonstração ─────────────────────────────────
-// Os 5 e-mails originais do seed (administradora, sindico, condomino1..3)
-// permanecem exatamente os mesmos — quem já tinha credencial anotada continua
-// logando. Os novos seguem um padrão previsível por condomínio:
-//   síndico do condomínio N (1-based):  sindico{N}.demo@condly.app
-//   condômino J do condomínio N:        condomino{J}.c{N}.demo@condly.app
-// (no condomínio 1, condôminos ficam sem o sufixo ".c1": condomino{J}.demo)
+// E-mails curtos de propósito (pedido do usuário, pra digitar fácil no
+// celular durante testes) com senha "123" — aceitável SOMENTE porque este
+// seed é exclusivo de ambiente de demonstração (a trava de
+// validarBancoDeDesenvolvimento impede rodar fora de banco _dev/_test):
+//   administradora:                    adm@app.com
+//   síndico do condomínio N (1-based): sind{N}@app.com
+//   condômino J do 1º condomínio:      cond{J}@app.com
+//   condômino J do condomínio N>1:     cond{J}.c{N}@app.com
+
+export const EMAIL_ADM = 'adm@app.com';
 
 export function emailSindico(condominioIdx: number): string {
-  return condominioIdx === 0
-    ? 'sindico.demo@condly.app'
-    : `sindico${condominioIdx + 1}.demo@condly.app`;
+  return `sind${condominioIdx + 1}@app.com`;
 }
 
 export function emailCondomino(condominioIdx: number, condominoIdx: number): string {
   return condominioIdx === 0
-    ? `condomino${condominoIdx + 1}.demo@condly.app`
-    : `condomino${condominoIdx + 1}.c${condominioIdx + 1}.demo@condly.app`;
+    ? `cond${condominoIdx + 1}@app.com`
+    : `cond${condominoIdx + 1}.c${condominioIdx + 1}@app.com`;
 }
 
 const NOMES_SINDICOS = [
@@ -362,7 +364,7 @@ async function criarUsuariosDemo(
   const proximoTelefone = () => `55119${String(telefoneSeq++).padStart(8, '0')}`;
 
   const usuarioAdm = await prisma.usuario.create({
-    data: { nome: 'Ana Administradora', email: 'administradora.demo@condly.app', telefoneWhatsapp: '5511900000001', senhaHash },
+    data: { nome: 'Ana Administradora', email: EMAIL_ADM, telefoneWhatsapp: '5511900000001', senhaHash },
   });
   await prisma.vinculoUsuario.create({
     data: { usuarioId: usuarioAdm.id, papel: 'ADMINISTRADORA', administradoraId: administradora.id },
@@ -958,15 +960,15 @@ async function main(): Promise<void> {
     await seed(prisma);
     console.log('\nSeed de demonstração aplicado com sucesso.\n');
     console.log(`Senha de todos os usuários: ${SENHA_DEMO}\n`);
-    console.log('Login de administradora: administradora.demo@condly.app');
+    console.log(`Login de administradora: ${EMAIL_ADM}`);
     console.log('\nSíndicos (um por condomínio):');
     CONDOMINIOS_CONFIG.forEach((cfg, i) => {
       console.log(`  ${emailSindico(i).padEnd(28)} → ${cfg.nome}`);
     });
     console.log('\nCondôminos (até 10 por condomínio, unidades 101 em diante):');
-    console.log('  condomino{1..10}.demo@condly.app        → Residencial Ipê Verde');
-    console.log('  condomino{1..10}.c{N}.demo@condly.app   → N-ésimo condomínio da lista');
-    console.log('  (ex: condomino1.c2.demo@condly.app é a unidade 101 do Edifício Maracanã)');
+    console.log('  cond{1..10}@app.com        → Residencial Ipê Verde');
+    console.log('  cond{1..10}.c{N}@app.com   → N-ésimo condomínio da lista');
+    console.log('  (ex: cond1.c2@app.com é a unidade 101 do Edifício Maracanã)');
   } finally {
     await prisma.onModuleDestroy();
   }

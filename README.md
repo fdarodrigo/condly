@@ -123,15 +123,16 @@ antes de recriar o cenário.
 
 ### Credenciais
 
-Senha de todos os usuários de demonstração: **`Demo123!`**
+Senha de todos os usuários de demonstração: **`123`** (e-mails curtos de
+propósito — ambiente de demonstração, nunca dados reais)
 
 | Papel | E-mail | Vínculo |
 | --- | --- | --- |
-| ADMINISTRADORA | `administradora.demo@condly.app` | Administradora "Administradora Demo" (carteira com os 10 condomínios) |
-| SINDICO | `sindico.demo@condly.app` | Condomínio "Residencial Ipê Verde" (1º da lista) |
-| SINDICO | `sindico{N}.demo@condly.app` (N = 2..10) | N-ésimo condomínio da lista (ex: `sindico2.demo` → Edifício Maracanã) |
-| CONDOMINO | `condomino{J}.demo@condly.app` (J = 1..10) | J-ésima unidade do Residencial Ipê Verde (101, 102, 103, ...) |
-| CONDOMINO | `condomino{J}.c{N}.demo@condly.app` | J-ésima unidade do N-ésimo condomínio (ex: `condomino1.c2.demo` → unidade 101 do Edifício Maracanã) |
+| ADMINISTRADORA | `adm@app.com` | Administradora "Administradora Demo" (carteira com os 10 condomínios) |
+| SINDICO | `sind1@app.com` | Condomínio "Residencial Ipê Verde" (1º da lista) |
+| SINDICO | `sind{N}@app.com` (N = 2..10) | N-ésimo condomínio da lista (ex: `sind2` → Edifício Maracanã) |
+| CONDOMINO | `cond{J}@app.com` (J = 1..10) | J-ésima unidade do Residencial Ipê Verde (101, 102, 103, ...) |
+| CONDOMINO | `cond{J}.c{N}@app.com` | J-ésima unidade do N-ésimo condomínio (ex: `cond1.c2` → unidade 101 do Edifício Maracanã) |
 
 Ordem dos condomínios (a mesma de `CONDOMINIOS_CONFIG` em `prisma/seed.ts`):
 1. Residencial Ipê Verde, 2. Edifício Maracanã, 3. Condomínio Solar das
@@ -139,8 +140,8 @@ Pedras, 4. Torres do Parque, 5. Villagio Toscana (8 unidades — só 8
 condôminos), 6. Residencial Bela Vista, 7. Edifício Copacabana Club,
 8. Condomínio Rio Branco, 9. Residencial Alegria, 10. Boulevard Jardins.
 
-Os 5 logins originais (`administradora.demo`, `sindico.demo`,
-`condomino1..3.demo`) continuam exatamente os mesmos.
+Os principais pra testar: `adm@app.com` (carteira), `sind1@app.com`
+(síndico do 1º condomínio) e `cond1@app.com` (condômino da unidade 101).
 
 ### O que cada login tem pra mostrar
 
