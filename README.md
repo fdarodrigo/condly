@@ -25,16 +25,19 @@ implementation plan). Rules for AI-assisted development in
 
 ## Highlights
 
-- **Multi-tenant isolation in two layers.** Every protected route resolves a
-  tenant scope (management company, condominium or unit), an RBAC guard
-  authorizes it, and a Prisma client extension injects the tenant filter
-  into queries on tenant-owned models, so a forgotten `where` in a service
-  does not leak another tenant's data.
+- **Multi-tenant isolation in two layers.** Tenant-scoped routes resolve a
+  tenant scope (management company, condominium or unit) and an RBAC guard
+  authorizes it. On top of the filters in each service, a Prisma client
+  extension adds the tenant filter to queries on tenant-owned models, as a
+  second line of defense in case a service forgets one. The exceptions
+  (raw SQL, webhooks, "my account" routes) are documented in
+  [`CLAUDE.md`](CLAUDE.md) with the reasoning for each.
 - **Aggregations in the database, with a query budget.** The management
   company dashboard computes per-condominium collection and delinquency
-  totals in a single hand-written SQL query (conditional aggregation over
-  condominium → unit → charge), and a test asserts it always runs in 2
-  queries whether the portfolio has 3 or 100 condominiums.
+  totals, including overdue amounts by age (1-30, 31-60, 61-90, 90+ days),
+  in a single hand-written SQL query (conditional aggregation over
+  condominium → unit → charge). A test asserts the number of queries is the
+  same whether the portfolio has 3 or 100 condominiums (no N+1).
 - **Payment and messaging webhooks.** The Asaas webhook is authenticated
   before any payload is read and is idempotent (a repeated notification
   never pays a charge twice). The WhatsApp webhook verifies an HMAC-SHA256
