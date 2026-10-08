@@ -1,85 +1,122 @@
 # Condly
 
-SaaS de gestão condominial multi-tenant. Monorepo com dois apps:
+Multi-tenant SaaS for condominium management in Brazil. Property management
+companies (*administradoras*) subscribe to Condly and offer their
+condominiums (building managers and residents) automated billing, support
+tickets, common-area bookings, documents, announcements, polls, assembly
+records and a WhatsApp bot.
 
-- `apps/web` — frontend Next.js 14 (App Router), TypeScript, Tailwind CSS v4 e
-  shadcn/ui, configurado como PWA.
-- `apps/api` — backend NestJS, TypeScript e Prisma ORM, conectado a um
-  PostgreSQL via `DATABASE_URL`.
+Monorepo with two apps:
 
-Documentação completa em [`docs/arquitetura.md`](docs/arquitetura.md) e
-[`docs/stack.md`](docs/stack.md). Regras de desenvolvimento assistido por IA
-em [`CLAUDE.md`](CLAUDE.md).
+- `apps/web`: Next.js 14 (App Router), TypeScript, Tailwind CSS v4 and
+  shadcn/ui, installable as a PWA.
+- `apps/api`: NestJS, TypeScript and Prisma ORM on PostgreSQL.
 
-## Pré-requisitos
+Full documentation in [`docs/arquitetura.md`](docs/arquitetura.md)
+(architecture) and [`docs/stack.md`](docs/stack.md) (stack and
+implementation plan). Rules for AI-assisted development in
+[`CLAUDE.md`](CLAUDE.md) and
+[`docs/boas-praticas-ia.md`](docs/boas-praticas-ia.md).
+
+> Domain entities and code comments are in Portuguese on purpose, mirroring
+> the Brazilian business vocabulary (`Cobranca` = charge, `Chamado` = support
+> ticket, `Unidade` = housing unit, `Condominio` = condominium). Generic code
+> follows standard English Node/TypeScript conventions.
+
+## Highlights
+
+- **Multi-tenant isolation in two layers.** Every protected route resolves a
+  tenant scope (management company, condominium or unit), an RBAC guard
+  authorizes it, and a Prisma client extension injects the tenant filter
+  into queries on tenant-owned models, so a forgotten `where` in a service
+  does not leak another tenant's data.
+- **Aggregations in the database, with a query budget.** The management
+  company dashboard computes per-condominium collection and delinquency
+  totals in a single hand-written SQL query (conditional aggregation over
+  condominium → unit → charge), and a test asserts it always runs in 2
+  queries whether the portfolio has 3 or 100 condominiums.
+- **Payment and messaging webhooks.** The Asaas webhook is authenticated
+  before any payload is read and is idempotent (a repeated notification
+  never pays a charge twice). The WhatsApp webhook verifies an HMAC-SHA256
+  signature over the raw body, and answers 200 even when sending the reply
+  fails, so Meta does not redeliver and reprocess the message.
+- **Rule-based WhatsApp bot with strict identity.** Who is talking comes only
+  from the phone number, never from message text, with a prompt-manipulation
+  denylist and multi-turn flows for bookings and tickets that reuse the same
+  service rules as the HTTP API.
+- **Tested against a real database.** 135 API integration tests run on
+  PostgreSQL (no mocked ORM), plus 43 API unit tests and component tests for
+  the web app. External services (Asaas, Cloudflare R2, Resend, Meta) are
+  faked behind interfaces, so tests need no network or credentials.
+
+## Prerequisites
 
 - Node.js 20+
-- Docker (para o PostgreSQL local — veja abaixo)
+- Docker (for the local PostgreSQL, see below)
 
-## Instalação
+## Installation
 
-O monorepo usa npm workspaces — um único `npm install` na raiz resolve as
-dependências dos dois apps:
+The monorepo uses npm workspaces, so a single install at the root covers
+both apps:
 
 ```bash
 npm install --legacy-peer-deps
 ```
 
-`--legacy-peer-deps` é necessário: há um conflito real de peer dependency
-entre as ferramentas Angular devkit trazidas por `@nestjs/schematics`/
-`@nestjs/cli` e a versão de `rxjs` exigida por outras dependências — sem a
-flag, o `npm install` padrão (resolução estrita de peer deps) falha. Se
-precisar adicionar uma dependência nova em qualquer um dos apps, use a
-mesma flag (`npm install <pacote> --legacy-peer-deps`), senão o pacote
-pode ficar sem alguma peer dependency instalada (foi o caso de
-`@testing-library/dom` ao configurar o Vitest em `apps/web`).
+`--legacy-peer-deps` is required: there is a real peer dependency conflict
+between the Angular devkit tools pulled in by `@nestjs/schematics` /
+`@nestjs/cli` and the `rxjs` version required by other dependencies.
+Without the flag, the default (strict) resolution fails. Use the same flag
+when adding a dependency to either app, otherwise some peer dependency may
+be left uninstalled (this happened with `@testing-library/dom` when setting
+up Vitest in `apps/web`).
 
-## Banco de dados (PostgreSQL via Docker)
+## Database (PostgreSQL via Docker)
 
-O `docker-compose.yml` na raiz sobe um Postgres dedicado ao Condly na porta
-`5433` (evita conflito com qualquer Postgres que você já tenha rodando na
-5432), com dois bancos: `condly_dev` (desenvolvimento) e `condly_test`
-(testes de integração, criado automaticamente por
+`docker-compose.yml` starts a dedicated Postgres on port `5433` (to avoid
+clashing with a Postgres you may already run on 5432) with two databases:
+`condly_dev` (development) and `condly_test` (integration tests, created by
 `docker/postgres-init/01-create-test-db.sql`).
 
 ```bash
 docker compose up -d
 ```
 
-## Variáveis de ambiente
+## Environment variables
 
 ### apps/api
 
-Copie o exemplo (já configurado para o Postgres do Docker acima):
+Copy the example, already configured for the Docker Postgres above:
 
 ```bash
 cp apps/api/.env.example apps/api/.env
 ```
 
-Variáveis:
-- `DATABASE_URL` — string de conexão do Postgres de desenvolvimento (`condly_dev`).
-- `TEST_DATABASE_URL` — string de conexão do Postgres de teste (`condly_test`),
-  usada só por `npm run test:integration`. Nunca deve apontar para o mesmo
-  banco do `DATABASE_URL`.
-- `PORT` — porta do backend (padrão `3001`, separada da porta do frontend).
-- `JWT_SECRET` — segredo de assinatura dos tokens de autenticação. Troque o
-  valor de exemplo antes de qualquer deploy real.
-- `JWT_EXPIRES_IN` — validade do token (padrão `1h`).
-- `ASAAS_API_URL` — `https://api-sandbox.asaas.com/v3` em dev/teste,
-  `https://api.asaas.com/v3` só em produção.
-- `ASAAS_API_KEY` — API Key da sua conta Asaas (sandbox ou produção, de
-  acordo com `ASAAS_API_URL`). Veja como obter a de sandbox abaixo.
-- `ASAAS_WEBHOOK_TOKEN` — token que você mesmo escolhe e configura também
-  no painel do Asaas ao criar o webhook; precisa ser idêntico nos dois
-  lados. O Asaas reenvia esse valor no header `asaas-access-token` em toda
-  notificação, e é assim (não HMAC) que validamos que a chamada é legítima.
-- `ASAAS_ENV` — `sandbox` (padrão) ou `production`. Em produção,
-  `FinanceiroService` recusa criar cobrança pra uma `Unidade` sem
-  `responsavelCpfCnpj` cadastrado (ver seção abaixo), em vez de deixar o
-  Asaas falhar na criação do cliente.
+Variables:
 
-Depois de configurar o `.env`, gere o client do Prisma e aplique as
-migrations:
+- `DATABASE_URL`: development database connection string (`condly_dev`).
+- `TEST_DATABASE_URL`: test database connection string (`condly_test`),
+  used only by `npm run test:integration`. Must never point to the same
+  database as `DATABASE_URL`.
+- `PORT`: API port (default `3001`, separate from the frontend port).
+- `JWT_SECRET`: signing secret for auth tokens. Replace the example value
+  before any real deploy.
+- `JWT_EXPIRES_IN`: token lifetime (default `1h`).
+- `ASAAS_API_URL`: `https://api-sandbox.asaas.com/v3` for dev/test,
+  `https://api.asaas.com/v3` only in production.
+- `ASAAS_API_KEY`: API key of your Asaas account (sandbox or production,
+  matching `ASAAS_API_URL`). See how to get a sandbox key below.
+- `ASAAS_WEBHOOK_TOKEN`: a token you choose and also configure in the Asaas
+  dashboard when creating the webhook; it must be identical on both sides.
+  Asaas sends it in the `asaas-access-token` header of every notification,
+  and that (not HMAC) is how the API checks the call is legitimate.
+- `ASAAS_ENV`: `sandbox` (default) or `production`. In production the API
+  refuses to create a charge for a unit without the payer's CPF/CNPJ (see
+  below) instead of letting Asaas fail on customer creation.
+- Cloudflare R2 (`R2_*`), Resend (`RESEND_*`) and WhatsApp Cloud API
+  (`WHATSAPP_*`) credentials: documented inline in `.env.example`.
+
+Then generate the Prisma client and apply the migrations:
 
 ```bash
 cd apps/api
@@ -89,152 +126,155 @@ npx prisma migrate dev
 
 ### apps/web
 
-Não há variáveis obrigatórias ainda neste esqueleto inicial.
+```bash
+cp apps/web/.env.example apps/web/.env.local
+```
 
-## Rodando localmente
+- `NEXT_PUBLIC_API_URL`: base URL of the API (default
+  `http://localhost:3001`), reachable from the browser.
 
-Em dois terminais separados:
+## Running locally
+
+In two terminals:
 
 ```bash
-# terminal 1 — backend (http://localhost:3001)
+# terminal 1: API (http://localhost:3001)
 cd apps/api
 npm run dev
 
-# terminal 2 — frontend (http://localhost:3000)
+# terminal 2: web app (http://localhost:3000)
 cd apps/web
 npm run dev
 ```
 
-Verifique o backend em `http://localhost:3001/health` — deve responder
-`{"status":"ok"}`. O frontend mostra "Condly — em construção" em
-`http://localhost:3000`.
+Check the API at `http://localhost:3001/health`, which should answer
+`{"status":"ok"}`. Opening `http://localhost:3000` redirects to the login
+page (or to the right home screen if you are already signed in).
 
-## Dados de demonstração
+## Demo data
 
-`npm run db:seed` (em `apps/api`, lê `DATABASE_URL` — recusa rodar fora de
-um banco `_dev`/`_test`, ver `validarBancoDeDesenvolvimento` em
-`prisma/seed.ts`) popula um cenário fixo de demonstração: 1 administradora,
-10 condomínios (174 unidades no total), 109 usuários (1 administradora, 1
-síndico por condomínio e até 10 condôminos por condomínio), com cobranças,
-reservas, chamados, avisos, enquetes, assembleias, ações administrativas,
-documentos, advertências e dados complementares de unidade distribuídos
-entre eles. **É destrutivo** — apaga todo o conteúdo das tabelas de domínio
-antes de recriar o cenário.
+`npm run db:seed` (in `apps/api`, reads `DATABASE_URL` and refuses to run
+outside a `_dev`/`_test` database, see `validarBancoDeDesenvolvimento` in
+`prisma/seed.ts`) creates a fixed demo scenario: 1 management company, 10
+condominiums (174 units), 109 users (1 company admin, 1 building manager
+per condominium and up to 10 residents per condominium), with charges,
+bookings, tickets, announcements, polls, assemblies, administrative
+actions, documents, warnings and extra unit data spread across them.
+**It is destructive**: it wipes all domain tables before recreating the
+scenario.
 
-### Credenciais
+### Credentials
 
-Senha de todos os usuários de demonstração: **`123`** (e-mails curtos de
-propósito — ambiente de demonstração, nunca dados reais)
+Password for every demo user: **`123`** (short emails on purpose: demo
+environment, never real data).
 
-| Papel | E-mail | Vínculo |
+| Role | Email | Linked to |
 | --- | --- | --- |
-| ADMINISTRADORA | `adm@app.com` | Administradora "Administradora Demo" (carteira com os 10 condomínios) |
-| SINDICO | `sind1@app.com` | Condomínio "Residencial Ipê Verde" (1º da lista) |
-| SINDICO | `sind{N}@app.com` (N = 2..10) | N-ésimo condomínio da lista (ex: `sind2` → Edifício Maracanã) |
-| CONDOMINO | `cond{J}@app.com` (J = 1..10) | J-ésima unidade do Residencial Ipê Verde (101, 102, 103, ...) |
-| CONDOMINO | `cond{J}.c{N}@app.com` | J-ésima unidade do N-ésimo condomínio (ex: `cond1.c2` → unidade 101 do Edifício Maracanã) |
+| ADMINISTRADORA (company admin) | `adm@app.com` | "Administradora Demo", portfolio with all 10 condominiums |
+| SINDICO (building manager) | `sind1@app.com` | "Residencial Ipê Verde" (1st in the list) |
+| SINDICO | `sind{N}@app.com` (N = 2..10) | N-th condominium (e.g. `sind2` → Edifício Maracanã) |
+| CONDOMINO (resident) | `cond{J}@app.com` (J = 1..10) | J-th unit of Residencial Ipê Verde (101, 102, 103, ...) |
+| CONDOMINO | `cond{J}.c{N}@app.com` | J-th unit of the N-th condominium (e.g. `cond1.c2` → unit 101 of Edifício Maracanã) |
 
-Ordem dos condomínios (a mesma de `CONDOMINIOS_CONFIG` em `prisma/seed.ts`):
+Condominium order (same as `CONDOMINIOS_CONFIG` in `prisma/seed.ts`):
 1. Residencial Ipê Verde, 2. Edifício Maracanã, 3. Condomínio Solar das
-Pedras, 4. Torres do Parque, 5. Villagio Toscana (8 unidades — só 8
-condôminos), 6. Residencial Bela Vista, 7. Edifício Copacabana Club,
+Pedras, 4. Torres do Parque, 5. Villagio Toscana (8 units, so 8
+residents), 6. Residencial Bela Vista, 7. Edifício Copacabana Club,
 8. Condomínio Rio Branco, 9. Residencial Alegria, 10. Boulevard Jardins.
 
-Os principais pra testar: `adm@app.com` (carteira), `sind1@app.com`
-(síndico do 1º condomínio) e `cond1@app.com` (condômino da unidade 101).
+The main ones to try: `adm@app.com` (portfolio), `sind1@app.com` (manager
+of the 1st condominium) and `cond1@app.com` (resident of unit 101).
 
-### O que cada login tem pra mostrar
+### What each login shows
 
-- **Administradora** (`/dashboard` e `/administradora/dashboard`): carteira
-  com 10 condomínios, adimplência variada (62%–100%), 16 chamados abertos
-  na carteira, rankings de arrecadação/inadimplência com 10 itens e
-  serviços periódicos a vencer nos próximos 30 dias.
-- **Síndico do Ipê Verde** (`/dashboard`): resumo financeiro do mês (9
-  pagas, 3 pendentes), 3 chamados (1 ABERTO, 1 PENDENTE_TRIAGEM aberto pela
-  condômina da 101, 1 RESOLVIDO aberto pelo condômino da 102); em
-  `/enquetes`, 3 enquetes (ATIVA com votos, ENCERRADA com resultado,
-  RASCUNHO); em `/assembleias`, 1 AGENDADA (com edital) e 1 REALIZADA (com
-  deliberações, ata e link de gravação); em `/acoes-administrativas`, 3
-  ações; em `/documentos`, 3 documentos (1 restrito a síndico/adm); 2
-  advertências emitidas; dados complementares preenchidos nas unidades
-  101–103. Os outros 9 síndicos têm cenários equivalentes mais enxutos.
-- **Condôminos** (`/minha-unidade`): os 3 primeiros de cada condomínio têm
-  cobrança PENDENTE/ATRASADA (nunca caem no bloco PAGO); todos têm pelo
-  menos 1 aviso não lido em `/avisos`; os condôminos 1–3 têm reserva futura
-  confirmada; no Ipê Verde, condôminos 1–6/1–8 já votaram nas enquetes
-  ativa/encerrada e podem ver o resultado parcial.
+- **Company admin** (`/dashboard` and `/administradora/dashboard`): a
+  10-condominium portfolio with varied collection rates (62% to 100%), 16
+  open tickets, collection and delinquency rankings, and recurring services
+  due in the next 30 days.
+- **Manager of Ipê Verde** (`/dashboard`): monthly financial summary (9 paid,
+  3 pending) and 3 tickets (1 ABERTO, 1 PENDENTE_TRIAGEM opened by the
+  resident of 101, 1 RESOLVIDO opened by the resident of 102). In
+  `/enquetes`, 3 polls (active with votes, closed with results, draft); in
+  `/assembleias`, 1 scheduled (with notice) and 1 held (with resolutions,
+  minutes and a recording link); in `/acoes-administrativas`, 3 actions; in
+  `/documentos`, 3 documents (1 restricted to manager/admin); 2 warnings
+  issued; extra data filled for units 101 to 103. The other 9 managers have
+  similar, smaller scenarios.
+- **Residents** (`/minha-unidade`): the first 3 of each condominium have a
+  PENDENTE/ATRASADO charge (never in the paid block); everyone has at least
+  1 unread announcement in `/avisos`; residents 1 to 3 have a confirmed
+  future booking; in Ipê Verde, residents 1 to 6 and 1 to 8 have already
+  voted in the active and closed polls and can see the partial results.
 
-**Observação sobre `/reservas`:** a tela usa "amanhã" como data padrão, mas
-as reservas do seed começam 3 dias a partir do momento em que o seed roda
-— então, no dia em que o seed for executado, a view padrão (amanhã) pode
-aparecer com tudo livre. Avance a data no formulário (próximos ~3 a 20
-dias) para ver horários "Reservado" de verdade.
+**Note on `/reservas`:** the screen defaults to "tomorrow", but seeded
+bookings start 3 days after the seed runs, so on seed day the default view
+may look fully available. Move the date forward (about 3 to 20 days) to see
+booked slots.
 
-## Gateway de pagamento (Asaas sandbox)
+## Payment gateway (Asaas sandbox)
 
-O módulo financeiro (`apps/api/src/financeiro`) integra com o
-[Asaas](https://www.asaas.com) para gerar boleto/PIX e receber confirmação de
-pagamento via webhook. Para testar contra o ambiente sandbox (gratuito, sem
-dados reais):
+The billing module (`apps/api/src/financeiro`) integrates with
+[Asaas](https://www.asaas.com) to issue boleto/PIX charges and receive
+payment confirmations by webhook. To test against the free sandbox:
 
-1. Crie uma conta em **https://sandbox.asaas.com** (é um ambiente totalmente
-   separado da conta de produção — não precisa de CNPJ real para começar a
-   testar).
-2. No painel, vá em **Integrações → API** e copie a **API Key** de sandbox.
-   Cole em `ASAAS_API_KEY` no `.env` de `apps/api`.
-3. Ainda no painel, vá em **Integrações → Webhooks** e crie um novo webhook:
-   - URL: o endereço público do seu backend + `/webhooks/asaas` (em dev local
-     isso exige um tunnel como `ngrok` ou `cloudflared`, já que o Asaas
-     precisa alcançar sua máquina pela internet).
-   - Eventos: pelo menos `PAYMENT_CONFIRMED` e `PAYMENT_RECEIVED`.
-   - Token de autenticação: escolha um valor forte e copie o mesmo valor para
-     `ASAAS_WEBHOOK_TOKEN` no `.env`. O Asaas reenvia esse token no header
-     `asaas-access-token` em toda chamada — é assim que `POST /webhooks/asaas`
-     valida que a notificação é legítima, **antes** de tocar em qualquer
-     dado (ver `AsaasWebhookController`).
-4. Para simular o pagamento de uma cobrança criada em sandbox, abra a
-   cobrança no painel do Asaas e use a opção de confirmar/simular o
-   recebimento — isso dispara o webhook real para a URL configurada.
+1. Create an account at **https://sandbox.asaas.com** (fully separate from
+   production; no real company registration needed to start testing).
+2. In the dashboard, go to **Integrações → API** and copy the sandbox **API
+   Key** into `ASAAS_API_KEY` in `apps/api/.env`.
+3. Go to **Integrações → Webhooks** and create a webhook:
+   - URL: your API's public address + `/webhooks/asaas` (locally this needs
+     a tunnel such as `ngrok` or `cloudflared`, since Asaas must reach your
+     machine over the internet).
+   - Events: at least `PAYMENT_CONFIRMED` and `PAYMENT_RECEIVED`.
+   - Auth token: choose a strong value and copy the same value into
+     `ASAAS_WEBHOOK_TOKEN`. Asaas sends it in the `asaas-access-token`
+     header of every call, and that is how `POST /webhooks/asaas` checks the
+     notification is legitimate, **before** touching any data (see
+     `AsaasWebhookController`).
+4. To simulate a payment, open a sandbox charge in the Asaas dashboard and
+   use the confirm/simulate payment option. That fires the real webhook to
+   your configured URL.
 
-**Cadastro do responsável (CPF/CNPJ):** o Asaas exige um *customer*
-cadastrado para emitir cobrança, e a API de produção exige CPF/CNPJ desse
-cliente. `Unidade` tem os campos opcionais `responsavelNome`,
-`responsavelEmail` e `responsavelCpfCnpj` — quando preenchidos,
-`AsaasHttpClient` cria/atualiza o cliente no Asaas com esses dados. Sem
-`responsavelCpfCnpj`:
-- em `ASAAS_ENV=sandbox` (padrão), a cobrança é criada normalmente (o Asaas
-  sandbox aceita cliente sem CPF/CNPJ) e um aviso é logado;
-- em `ASAAS_ENV=production`, `POST /condominios/:id/cobrancas` retorna
-  `422` de forma tratada, sem chamar o gateway nem criar registro local.
+**Payer registration (CPF/CNPJ):** Asaas needs a registered customer to
+issue a charge, and the production API requires the customer's CPF/CNPJ.
+`Unidade` has optional `responsavelNome`, `responsavelEmail` and
+`responsavelCpfCnpj` fields; when present, `AsaasHttpClient` creates or
+updates the Asaas customer with them. Without `responsavelCpfCnpj`:
 
-Ainda não existe endpoint para cadastrar esses dados pela API — por ora,
-isso é feito direto no banco (ou via seed). Uma tela/endpoint de cadastro
-de morador é trabalho de um prompt futuro.
+- with `ASAAS_ENV=sandbox` (default), the charge is created normally (the
+  sandbox accepts customers without CPF/CNPJ) and a warning is logged;
+- with `ASAAS_ENV=production`, `POST /condominios/:id/cobrancas` returns a
+  handled `422`, without calling the gateway or creating a local record.
 
-Os testes de integração (`npm run test:integration`) **não** chamam o Asaas
-real — usam um `FakeAsaasClient` injetado via `overrideProvider`, então
-rodam sem rede e sem credenciais. O fluxo manual acima é só para validar a
-integração de ponta a ponta contra o sandbox de verdade.
+Integration tests never call the real Asaas: they use a `FakeAsaasClient`
+injected with `overrideProvider`, so they run without network or
+credentials. The manual flow above is only for end-to-end validation
+against the real sandbox.
 
-## Testes (apps/api)
+## Tests (apps/api)
 
 ```bash
-npm run test:unit         # Jest sem tocar banco
-npm run test:integration  # aplica as migrations no banco de teste e roda os testes de integração
+npm run test:unit         # Jest, no database
+npm run test:integration  # applies migrations to the test database, then runs the integration specs
 ```
 
-`test:integration` lê `TEST_DATABASE_URL` do `.env`, aplica
-`prisma migrate deploy` nesse banco e só então roda os specs
-`*.integration-spec.ts` em `apps/api/test/`.
+`test:integration` reads `TEST_DATABASE_URL` from `.env`, runs
+`prisma migrate deploy` against that database and then runs the
+`*.integration-spec.ts` specs in `apps/api/test/`.
 
-## Lint, tipos e formatação
+## Lint, types and formatting
 
 ```bash
-# em cada app
+# in each app
 npm run lint
 npx tsc --noEmit
 
-# formatação compartilhada (Prettier), a partir da raiz
-npm run format        # aplica
-npm run format:check  # só verifica
+# shared formatting (Prettier), from the root
+npm run format        # apply
+npm run format:check  # check only
 ```
+
+## Deploy
+
+A zero-cost demo deploy (Neon + Render + Vercel) is described step by step
+in [`docs/deploy.md`](docs/deploy.md).

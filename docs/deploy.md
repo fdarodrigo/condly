@@ -1,115 +1,115 @@
-# Deploy de teste (custo zero): Neon + Render + Vercel
+# Test deploy (zero cost): Neon + Render + Vercel
 
-Ambiente de **demonstração** — só dados fictícios do seed, nunca dados
-reais de condomínio/moradores. Três serviços gratuitos, todos com login
-via GitHub, nenhum pede cartão:
+A **demo** environment: only fictitious seed data, never real
+condominium/resident data. Three free services, all with GitHub sign-in,
+none asking for a credit card:
 
-| Serviço | O que hospeda | Plano |
+| Service | Hosts | Plan |
 | --- | --- | --- |
-| [Neon](https://neon.tech) | PostgreSQL | Free (0,5GB) |
-| [Render](https://render.com) | API NestJS (`apps/api`) | Free (dorme após ~15min ocioso; 1ª requisição seguinte demora 30–60s) |
-| [Vercel](https://vercel.com) | Frontend Next.js/PWA (`apps/web`) | Hobby |
+| [Neon](https://neon.tech) | PostgreSQL | Free (0.5 GB) |
+| [Render](https://render.com) | NestJS API (`apps/api`) | Free (sleeps after ~15 min idle; the next request takes 30 to 60 s) |
+| [Vercel](https://vercel.com) | Next.js frontend/PWA (`apps/web`) | Hobby |
 
-A cada `git push` na branch `main`, Render e Vercel fazem deploy
-automático da nova versão.
+On every `git push` to `main`, Render and Vercel deploy the new version
+automatically.
 
-## 1. Banco — Neon
+## 1. Database: Neon
 
-1. Crie a conta em https://neon.tech (Continue with GitHub).
-2. Crie um projeto (nome livre, ex: `condly`) e região `AWS São Paulo`
-   (ou a mais próxima).
-3. **Nomeie o database `condly_test`** — não é opcional: a trava de
-   segurança do seed (`validarBancoDeDesenvolvimento` em
-   `prisma/seed.ts`) recusa rodar em bancos sem `_dev`/`_test` no nome.
-4. Copie a **connection string** (botão "Connect", formato
-   `postgresql://...@....neon.tech/condly_test?sslmode=require`). É o
-   valor de `DATABASE_URL` no Render (passo 2) e no seed (passo 3).
+1. Create an account at https://neon.tech (Continue with GitHub).
+2. Create a project (any name, e.g. `condly`) in region `AWS São Paulo`
+   (or the closest one).
+3. **Name the database `condly_test`**. This is not optional: the seed's
+   safety check (`validarBancoDeDesenvolvimento` in `prisma/seed.ts`)
+   refuses to run on databases without `_dev`/`_test` in the name.
+4. Copy the **connection string** ("Connect" button, format
+   `postgresql://...@....neon.tech/condly_test?sslmode=require`). It is the
+   value of `DATABASE_URL` on Render (step 2) and for the seed (step 3).
 
-## 2. API — Render
+## 2. API: Render
 
-1. Conta em https://render.com (GitHub login) → **New → Web Service** →
-   conecte o repositório `fdarodrigo/condly`.
-2. Configurações (os campos fora desta lista ficam no padrão):
-   - **Root Directory**: *(vazio — raiz do repo; monorepo npm workspaces
-     precisa do lockfile da raiz)*
+1. Account at https://render.com (GitHub sign-in) → **New → Web Service** →
+   connect the `fdarodrigo/condly` repository.
+2. Settings (fields not listed stay at their defaults):
+   - **Root Directory**: *(empty, the repo root; an npm workspaces monorepo
+     needs the root lockfile)*
    - **Build Command**:
      `npm install && cd apps/api && npx prisma generate && npm run build`
    - **Start Command**:
      `cd apps/api && npx prisma migrate deploy && npm run start:prod`
    - **Instance Type**: Free
    - **Health Check Path**: `/health`
-3. Environment Variables (aba Environment). Copie os nomes de
-   `apps/api/.env.example`; valores pro ambiente de teste:
+3. Environment Variables (Environment tab). Copy the names from
+   `apps/api/.env.example`; values for the test environment:
    - `NODE_VERSION` = `20`
-   - `DATABASE_URL` = connection string do Neon
-   - `JWT_SECRET` = **um segredo novo e forte** (ex: saída de
-     `openssl rand -hex 32`) — nunca o mesmo do `.env` local
+   - `DATABASE_URL` = the Neon connection string
+   - `JWT_SECRET` = **a new, strong secret** (e.g. the output of
+     `openssl rand -hex 32`), never the same as your local `.env`
    - `JWT_EXPIRES_IN` = `1d`
    - `WHATSAPP_VERIFY_TOKEN` / `WHATSAPP_APP_SECRET` /
      `WHATSAPP_CLOUD_API_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` /
-     `WHATSAPP_API_VERSION` — valores reais da Meta se for testar o bot
-     (ver seção do bot no README); senão, os placeholders do `.env.example`
+     `WHATSAPP_API_VERSION`: real Meta values if you will test the bot;
+     otherwise, the `.env.example` placeholders
    - `ASAAS_API_URL` / `ASAAS_API_KEY` / `ASAAS_WEBHOOK_TOKEN` /
-     `ASAAS_ENV` e `RESEND_API_KEY` / `RESEND_FROM_EMAIL` — placeholders
-     do `.env.example` (os fluxos que dependem deles falham de forma
-     controlada, igual em dev)
-   - `PORT` **não** — o Render injeta o próprio
-4. Deploy. Ao final, anote a URL pública
-   (`https://<nome>.onrender.com`) — é a `NEXT_PUBLIC_API_URL` do passo 4
-   e a base do webhook do WhatsApp.
-5. Teste: `https://<nome>.onrender.com/health` deve responder
-   `{"status":"ok"}` (a primeira visita pode demorar ~1min: cold start).
+     `ASAAS_ENV` and `RESEND_API_KEY` / `RESEND_FROM_EMAIL`: the
+     `.env.example` placeholders (flows that depend on them fail in a
+     controlled way, same as in dev)
+   - **Not** `PORT`: Render injects its own
+4. Deploy. When it finishes, note the public URL
+   (`https://<name>.onrender.com`). It is the `NEXT_PUBLIC_API_URL` of step 4
+   and the base of the WhatsApp webhook.
+5. Test: `https://<name>.onrender.com/health` should answer
+   `{"status":"ok"}` (the first visit can take ~1 min: cold start).
 
-## 3. Popular o banco (seed) — da sua máquina
+## 3. Populate the database (seed) from your machine
 
-As migrations rodam sozinhas no start do Render (`migrate deploy`); o
-seed é manual e destrutivo (recria o cenário demo do zero):
+Migrations run by themselves when Render starts (`migrate deploy`); the
+seed is manual and destructive (it recreates the demo scenario from
+scratch):
 
 ```bash
 cd apps/api
-DATABASE_URL="<connection string do Neon>" npm run db:seed
+DATABASE_URL="<Neon connection string>" npm run db:seed
 ```
 
-(A variável passada na linha de comando tem precedência sobre o `.env` —
-o banco local não é tocado.)
+(A variable passed on the command line takes precedence over `.env`, so
+the local database is not touched.)
 
-## 4. Frontend — Vercel
+## 4. Frontend: Vercel
 
-1. Conta em https://vercel.com (GitHub login) → **Add New → Project** →
-   importe `fdarodrigo/condly`.
-2. Configurações:
+1. Account at https://vercel.com (GitHub sign-in) → **Add New → Project** →
+   import `fdarodrigo/condly`.
+2. Settings:
    - **Root Directory**: `apps/web`
-   - Framework: Next.js (detectado sozinho)
+   - Framework: Next.js (detected automatically)
    - **Environment Variable**: `NEXT_PUBLIC_API_URL` =
-     `https://<nome>.onrender.com` (URL do Render, sem barra no final)
-3. Deploy. A URL final (`https://<projeto>.vercel.app`) é a que se abre
-   no celular.
+     `https://<name>.onrender.com` (the Render URL, no trailing slash)
+3. Deploy. The final URL (`https://<project>.vercel.app`) is the one to open
+   on the phone.
 
-## 5. Instalar o PWA no celular
+## 5. Install the PWA on a phone
 
-- **Android/Chrome**: abra a URL do Vercel → banner "Adicionar Condly à
-  tela inicial" ou Menu ⋮ → **Instalar app**.
-- **iPhone/Safari**: abra a URL → Compartilhar → **Adicionar à Tela de
-  Início**.
+- **Android/Chrome**: open the Vercel URL → "Add Condly to home screen"
+  banner, or Menu ⋮ → **Install app**.
+- **iPhone/Safari**: open the URL → Share → **Add to Home Screen**.
 
-Login com os usuários demo (`Demo123!`) — ver "Dados de demonstração" no
-README. Como a URL do Vercel é fixa, o app instalado continua válido a
-cada novo deploy.
+Sign in with the demo users (password `123`), see "Demo data" in the
+README. Since the Vercel URL is fixed, the installed app keeps working
+after every new deploy.
 
-## 6. (Opcional) Webhook do bot do WhatsApp
+## 6. (Optional) WhatsApp bot webhook
 
-Com a API no Render, o webhook da Meta ganha URL estável:
-`https://<nome>.onrender.com/webhooks/whatsapp` — cadastre no painel da
-Meta com o `WHATSAPP_VERIFY_TOKEN` configurado no Render. Atenção ao free
-tier: com a API dormindo, o primeiro webhook após ocioso pode estourar o
-timeout da Meta (ela reenvia, então funciona no retry — conviver com
-isso ou manter a instância acordada com um ping periódico).
+With the API on Render, the Meta webhook gets a stable URL:
+`https://<name>.onrender.com/webhooks/whatsapp`. Register it in the Meta
+dashboard with the `WHATSAPP_VERIFY_TOKEN` set on Render. Beware of the
+free tier: with the API asleep, the first webhook after idling may exceed
+Meta's timeout (Meta redelivers, so it works on the retry; either live with
+that or keep the instance awake with a periodic ping).
 
-## Ressalvas do ambiente de teste
+## Test environment caveats
 
-- Free tier do Render dorme: primeira requisição após ocioso leva
-  30–60s (o login "pendura" e depois anda).
-- O seed é destrutivo e o banco é de demonstração — rode o seed de novo
-  sempre que quiser resetar o cenário.
-- Nada de dados reais até uma revisão de produção (backups, logs,
-  rotação de segredos, domínio próprio).
+- Render's free tier sleeps: the first request after idling takes 30 to
+  60 s (login "hangs", then goes through).
+- The seed is destructive and the database is for demos: run the seed again
+  whenever you want to reset the scenario.
+- No real data until a production review (backups, logging, secret
+  rotation, custom domain).

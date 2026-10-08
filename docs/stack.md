@@ -1,117 +1,119 @@
-# Stack tecnológico e plano de implementação — Condly
+# Tech stack and implementation plan — Condly
 
-## 1. Visão geral da stack recomendada
+## 1. Recommended stack overview
 
-| Camada | Tecnologia recomendada | Por quê |
+| Layer | Recommended technology | Why |
 |---|---|---|
-| Frontend | Next.js (React) + Tailwind CSS + shadcn/ui, como PWA | Web responsivo funciona em desktop (síndico/adm) e celular (condômino) sem precisar publicar em loja de app |
-| Backend | Node.js com NestJS + Prisma ORM | Estrutura organizada, tipagem forte, fácil de encontrar desenvolvedores no Brasil |
-| Banco de dados | PostgreSQL (via Supabase ou Neon) | Relacional, robusto para dados financeiros, suporta Row-Level Security para isolamento multi-tenant |
-| Hospedagem (MVP) | Vercel (frontend) + Railway ou Render (backend) | Deploy rápido, custo baixo no início |
-| Armazenamento de arquivos | Cloudflare R2 (compatível com S3) | Custo baixo para documentos e fotos de condomínio |
-| E-mail transacional | Resend | API simples, gratuito até um volume razoável |
-| Gateway de pagamento | Asaas ou Efí, via subconta por condomínio | Boleto + PIX com webhook de confirmação automática, sem custo de transação para o Condly |
-| Bot de WhatsApp | Meta WhatsApp Cloud API (oficial) | Ver seção 3 |
+| Frontend | Next.js (React) + Tailwind CSS + shadcn/ui, as a PWA | A responsive web app works on desktop (building manager/management company) and on mobile (resident) without publishing to an app store |
+| Backend | Node.js with NestJS + Prisma ORM | Organized structure, strong typing, easy to hire developers for in Brazil |
+| Database | PostgreSQL (via Supabase or Neon) | Relational, robust for financial data, supports Row-Level Security for multi-tenant isolation |
+| Hosting (MVP) | Vercel (frontend) + Railway or Render (backend) | Fast deploys, low initial cost |
+| File storage | Cloudflare R2 (S3-compatible) | Low cost for condominium documents and photos |
+| Transactional email | Resend | Simple API, free up to a reasonable volume |
+| Payment gateway | Asaas or Efí, through a sub-account per condominium | Boleto + PIX with automatic confirmation webhook, no transaction cost for Condly |
+| WhatsApp bot | Meta WhatsApp Cloud API (official) | See section 3 |
 
-## 2. Frontend — PWA, web e mobile em uma única base
+## 2. Frontend: PWA, web and mobile from one codebase
 
-Um PWA é acessado normalmente pelo navegador (cobre síndico e administradora) e pode ser "instalado" na tela do celular do condômino, recebendo notificações push como um app nativo — uma única base de código cobrindo as duas pontas. Migrar para app nativo publicado em loja é uma decisão de fase futura, viável sem reescrita (ferramentas como Capacitor empacotam o mesmo PWA), caso isso se mostre necessário para credibilidade comercial.
+A PWA is used normally in the browser (covering building managers and management companies) and can be "installed" on the resident's phone home screen, receiving push notifications like a native app: one codebase covering both ends. Moving to a native app published in the stores is a later decision, possible without a rewrite (tools such as Capacitor package the same PWA), if it proves necessary for commercial credibility.
 
-## 3. Bot de WhatsApp — escolha de API e arquitetura
+## 3. WhatsApp bot: API choice and architecture
 
-### 3.1 Opções disponíveis no Brasil
+### 3.1 Options available in Brazil
 
-| Opção | Vantagem | Risco |
+| Option | Advantage | Risk |
 |---|---|---|
-| Meta WhatsApp Cloud API (direta) | Mais barata por mensagem, controle total | Verificação de negócio mais burocrática no início |
-| BSP brasileiro (Zenvia, Take Blip, Gupshup) | Onboarding mais rápido, suporte em português | Custo por mensagem mais alto, dependência de terceiro |
-| Soluções não-oficiais | Setup imediato | Alto risco de banimento do número — não recomendado |
+| Meta WhatsApp Cloud API (direct) | Cheapest per message, full control | Business verification is more bureaucratic at first |
+| Brazilian BSP (Zenvia, Take Blip, Gupshup) | Faster onboarding, support in Portuguese | Higher cost per message, third-party dependency |
+| Unofficial solutions | Immediate setup | High risk of the number being banned; not recommended |
 
-**Recomendação**: Meta WhatsApp Cloud API diretamente, iniciando o processo de verificação de negócio (Meta Business Manager) o quanto antes, em paralelo ao desenvolvimento.
+**Recommendation**: Meta WhatsApp Cloud API directly, starting the business verification process (Meta Business Manager) as early as possible, in parallel with development.
 
-### 3.2 Arquitetura do bot — regras, não IA generativa livre, na v1
+### 3.2 Bot architecture: rules, not free-form generative AI, in v1
 
-Bot baseado em **menus e intenções estruturadas**, não um agente de IA com liberdade total de resposta. Em um produto que toca em dinheiro e dados de condomínio, previsibilidade importa mais do que naturalidade da conversa. Processamento de linguagem natural simples por cima das regras é viável e melhora a experiência sem abrir mão do controle.
+A bot based on **menus and structured intents**, not an AI agent with full freedom to answer. In a product that touches money and condominium data, predictability matters more than natural conversation. Simple natural-language processing on top of the rules is viable and improves the experience without giving up control.
 
-### 3.3 Escopo de informações e ações do bot (v1)
+### 3.3 Scope of the bot's information and actions (v1)
 
-**O bot resolve sozinho**: consultar saldo devedor e próximo vencimento; enviar 2ª via de boleto/PIX; consultar status de chamado; consultar disponibilidade de área comum; fazer reserva (se não houver conflito); confirmar leitura de aviso.
+**The bot resolves on its own**: check outstanding balance and next due date; send a duplicate boleto/PIX; check ticket status; check common area availability; make a booking (if there is no conflict); confirm an announcement was read.
 
-**O bot inicia, humano finaliza**: abrir chamado (síndico classifica); reportar ocorrência (revisão antes de fechar); solicitar documento (link seguro, não o arquivo pelo chat); cancelar reserva (confirmação dupla).
+**The bot starts, a human finishes**: open a ticket (the building manager classifies it); report an incident (reviewed before closing); request a document (secure link, not the file over chat); cancel a booking (double confirmation).
 
-**Fora do escopo na v1**: editar dados cadastrais sensíveis; acessar perfil de outro condômino; participar de votação formal; negociar acordo de inadimplência.
+**Out of scope in v1**: editing sensitive registration data; accessing another resident's profile; taking part in formal voting; negotiating a delinquency agreement.
 
-### 3.4 Exemplo de fluxo de conversa (reserva de área comum)
+### 3.4 Example conversation flow (common area booking)
 
 ```
-Condômino: Oi, quero reservar o salão de festas
-Bot: Olá! Para qual data você gostaria de reservar o salão de festas?
-Condômino: dia 15 de agosto
-Bot: O salão está disponível no dia 15/08. Confirma a reserva das 14h às 22h?
-     [Confirmar] [Escolher outro horário]
-Condômino: [Confirmar]
-Bot: Reserva confirmada! Você pode ver os detalhes pelo link: [link do app].
+Resident: Hi, I'd like to book the party hall
+Bot: Hello! For which date would you like to book the party hall?
+Resident: August 15
+Bot: The hall is available on 08/15. Confirm the booking from 2 pm to 10 pm?
+     [Confirm] [Choose another time]
+Resident: [Confirm]
+Bot: Booking confirmed! You can see the details at: [app link].
 ```
 
-## 4. Gateway de pagamento — modelo de subconta
+(The real bot converses in Portuguese.)
 
-Cada condomínio (CNPJ próprio) tem sua própria subconta no Asaas ou Efí. O dinheiro cai direto na conta do condomínio; a taxa por transação é descontada dele, não do Condly. Ambos os gateways oferecem ambiente de testes (sandbox) gratuito e a possibilidade de gerar cobranças reais de valor baixo (R$1–5) em produção para validar o fluxo de ponta a ponta antes de qualquer cobrança real de condômino.
+## 4. Payment gateway: sub-account model
 
-**Pergunta a validar com o sócio**: a administradora já usa algum sistema de cobrança próprio? Se sim, recomenda-se rodar em paralelo no início — os condomínios do piloto continuam com o processo atual ativo enquanto as próximas cobranças passam a ser geradas via Condly, sem necessidade de migrar histórico.
+Each condominium (with its own CNPJ) has its own sub-account in Asaas or Efí. The money goes straight into the condominium's account; the per-transaction fee is deducted from it, not from Condly. Both gateways offer a free test environment (sandbox) and allow real low-value charges (R$1 to R$5) in production to validate the flow end to end before charging any real resident.
 
-## 5. Estratégia de demonstração — backend real, não mock
+**Question to validate with the partner**: does the management company already use its own billing system? If so, running both in parallel at first is recommended: the pilot condominiums keep the current process active while the next charges are generated through Condly, with no need to migrate history.
 
-Construir o backend real desde já, com dados de teste (seed), em vez de um frontend mockado — o diferencial do bot não é demonstrável de forma convincente com tela estática.
+## 5. Demo strategy: real backend, not a mock
 
-### Roteiro de teste sugerido
+Build the real backend from the start, with test data (seed), instead of a mocked frontend: the bot's differentiator cannot be demonstrated convincingly with static screens.
 
-1. Criar um condomínio fictício com 15–20 unidades, alguns boletos pagos, alguns atrasados.
-2. Criar os três logins de teste: administradora, síndico e dois ou três condôminos.
-3. Conectar um número de WhatsApp Cloud API em modo sandbox.
-4. Roteiro de demonstração: dashboard financeiro com inadimplência → consulta de saldo via WhatsApp → reserva de área comum pelo bot → confirmação aparecendo automaticamente no calendário do app.
+### Suggested test script
 
-## 6. Estimativa de custo e cronograma de desenvolvimento
+1. Create a fictitious condominium with 15 to 20 units, some charges paid, some overdue.
+2. Create the three test logins: management company, building manager and two or three residents.
+3. Connect a WhatsApp Cloud API number in sandbox mode.
+4. Demo script: financial dashboard with delinquency → balance check over WhatsApp → common area booking through the bot → confirmation showing up automatically on the app calendar.
 
-Com a simplificação do modelo de marca (sem motor de tema dinâmico, sem domínio customizado por cliente), o escopo do MVP ficou mais leve do que a estimativa inicial:
+## 6. Cost and development timeline estimate
 
-| Abordagem | Prazo estimado | Custo estimado |
+With the simplified branding model (no dynamic theming engine, no custom domain per client), the MVP scope became lighter than the initial estimate:
+
+| Approach | Estimated timeline | Estimated cost |
 |---|---|---|
-| Freelancer — 1 dev fullstack | 9–12 semanas | R$32.000–48.000 |
-| Squad pequeno (back + front) | 7–9 semanas | R$55.000–80.000 |
-| Agência | 10–14 semanas | R$80.000–145.000 |
+| Freelancer, 1 full-stack dev | 9 to 12 weeks | R$32,000 to 48,000 |
+| Small squad (back + front) | 7 to 9 weeks | R$55,000 to 80,000 |
+| Agency | 10 to 14 weeks | R$80,000 to 145,000 |
 
-Recomendação: começar com um freelancer fullstack experiente em Node.js/React, ou uma dupla trabalhando em paralelo.
+Recommendation: start with an experienced full-stack freelancer in Node.js/React, or a pair working in parallel.
 
-## 7. Estratégia de testes
+## 7. Testing strategy
 
-Pirâmide de testes recomendada, do mais barato/rápido ao mais caro/lento:
+Recommended test pyramid, from cheapest/fastest to most expensive/slowest:
 
-1. **Testes unitários** — regras de negócio isoladas (cálculo de inadimplência, validação de conflito de reserva, motor de intenções do bot), sem tocar banco de dados real. Ferramenta: Jest (já vem com NestJS). Script: `npm run test:unit`.
-2. **Testes de integração** — endpoints reais batendo num banco de dados de teste de verdade (não mockado). Essencial para testar isolamento multi-tenant de fato, não apenas a lógica isolada — use um banco/schema separado (`condly_test`) ou Testcontainers para subir um Postgres efêmero a cada execução. Script: `npm run test:integration`.
-3. **Testes end-to-end (E2E)** — fluxos completos pelo navegador, cobrindo os caminhos críticos de cada perfil. Ferramenta: Playwright. Script: `npm run test:e2e`.
+1. **Unit tests**: isolated business rules (delinquency calculation, booking conflict validation, the bot's intent engine), without touching a real database. Tool: Jest (ships with NestJS). Script: `npm run test:unit`.
+2. **Integration tests**: real endpoints hitting a real test database (not mocked). Essential for actually testing multi-tenant isolation, not just isolated logic. Use a separate database/schema (`condly_test`) or Testcontainers to spin up an ephemeral Postgres per run. Script: `npm run test:integration`.
+3. **End-to-end (E2E) tests**: full browser flows covering each profile's critical paths. Tool: Playwright. Script: `npm run test:e2e`.
 
-### O que precisa de teste obrigatório, em ordem de prioridade
+### What must be tested, in priority order
 
-| Prioridade | O que testar | Por quê |
+| Priority | What to test | Why |
 |---|---|---|
-| 1 | Isolamento multi-tenant em todo módulo | É o erro mais caro do sistema — um síndico do condomínio A nunca pode acessar dado do condomínio B |
-| 2 | Webhook de pagamento — idempotência e assinatura | Webhook duplicado não pode gerar pagamento duplicado; payload sem assinatura válida deve ser rejeitado |
-| 3 | RBAC por papel | Cada papel (administradora/síndico/condômino) só acessa o que a arquitetura define |
-| 4 | Máquina de estados de Chamado e Cobrança | Transições inválidas de status não podem ocorrer |
-| 5 | Conflito de reserva | Duas reservas não podem ocupar o mesmo horário na mesma área comum |
-| 6 | Motor de intenções do bot | Cada palavra-chave leva à ação certa; mensagem fora do escopo cai no fallback, nunca "inventa" uma resposta |
+| 1 | Multi-tenant isolation in every module | The most expensive error in the system: a building manager of condominium A must never access data from condominium B |
+| 2 | Payment webhook: idempotency and signature | A duplicated webhook must not create a duplicated payment; a payload without a valid signature must be rejected |
+| 3 | RBAC per role | Each role (management company/building manager/resident) accesses only what the architecture defines |
+| 4 | Ticket and Charge state machines | Invalid status transitions must not happen |
+| 5 | Booking conflict | Two bookings cannot take the same time slot in the same common area |
+| 6 | Bot intent engine | Each keyword leads to the right action; out-of-scope messages fall back, never "invent" an answer |
 
-### Meta de cobertura
+### Coverage target
 
-Um número de referência razoável é ~80% de cobertura de linha nos módulos de negócio de `apps/api/src` (financeiro, chamados, reservas, RBAC, bot) — não é uma meta a perseguir a qualquer custo: testar getters/setters triviais ou DTOs sem lógica não agrega segurança real, só infla o número. Priorize sempre a lista da tabela acima sobre a métrica de cobertura em si.
+A reasonable reference number is ~80% line coverage in the business modules of `apps/api/src` (billing, tickets, bookings, RBAC, bot). It is not a target to chase at any cost: testing trivial getters/setters or logic-free DTOs adds no real safety, it only inflates the number. Always prioritize the list in the table above over the coverage metric itself.
 
-### Integração contínua
+### Continuous integration
 
-Configure um workflow de CI (GitHub Actions) que rode lint, checagem de tipos, testes unitários e testes de integração a cada push e pull request, bloqueando merge se algo falhar — detalhado no Prompt 11 do documento de prompts.
+Set up a CI workflow (GitHub Actions) that runs lint, type checks, unit tests and integration tests on every push and pull request, blocking merges if anything fails (detailed in Prompt 11 of the prompts document).
 
-## 8. Próximos passos técnicos imediatos
+## 8. Immediate technical next steps
 
-1. Validar com o sócio se a administradora já tem sistema de cobrança próprio.
-2. Iniciar o processo de verificação de negócio no Meta Business Manager para a WhatsApp Cloud API.
-3. Criar conta de testes (sandbox) no Asaas ou Efí, e abrir as subcontas de teste por condomínio fictício.
-4. Definir o condomínio fictício de demonstração e os dados de teste.
+1. Check with the partner whether the management company already has its own billing system.
+2. Start the business verification process in Meta Business Manager for the WhatsApp Cloud API.
+3. Create a test (sandbox) account in Asaas or Efí, and open test sub-accounts per fictitious condominium.
+4. Define the fictitious demo condominium and its test data.
